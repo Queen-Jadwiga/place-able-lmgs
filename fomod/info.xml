@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<fomod>
+  <Name>Placeable LMGs</Name>
+  <Author>Queen-Jadwiga</Author>
+  <Version MachineVersion="0.8.0">0.8.0</Version>
+  <Description>Place, operate and pick up supported base PKM and MG42 emplacements.</Description>
+</fomod>

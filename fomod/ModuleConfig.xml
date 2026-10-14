@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
+  <moduleName>Placeable LMGs</moduleName>
+  <requiredInstallFiles>
+    <folder source="gamedata" destination="gamedata"/>
+    <file source="README.md" destination="README.md"/>
+    <file source="TESTING.md" destination="TESTING.md"/>
+    <file source="meta.ini" destination="meta.ini"/>
+    <file source="PRIVATE_MODELS.json" destination="PRIVATE_MODELS.json"/>
+    <file source="BUILD.json" destination="BUILD.json"/>
+  </requiredInstallFiles>
+</config>
