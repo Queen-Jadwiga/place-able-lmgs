@@ -59,7 +59,7 @@ local function tick()
     local ok,obj=pcall(eligible)
     if ok and obj then
         if prompted~=obj:id() then
-            local changed=pcall(function() obj:set_tip_text("st_plmg_pickup_action") end)
+            local changed=pcall(function() obj:set_tip_text("st_plmg_mount_pickup_action") end)
             if not changed then event("tooltip_unavailable id="..obj:id()) end
             prompted=obj:id()
         end

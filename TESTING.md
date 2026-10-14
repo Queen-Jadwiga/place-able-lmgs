@@ -1,4 +1,4 @@
-# v0.8.0 test
+# v0.8.1 test
 
 Install independently of CtZ, on a backed-up ordinary GAMMA save. Restart fully. Use a base PKM or MG42 without installed upgrades/accessories. For MG42 tests, enable only the MG-42/MG-3 addon from [Hisalute's Weapon Packs Repacked](https://www.moddb.com/mods/stalker-anomaly/addons/hisalutes-weapon-packs-repacked); the other weapon packs are not required. PKM tests need no Hisalute addon. Keep GT disabled.
 
@@ -10,3 +10,5 @@ Install independently of CtZ, on a backed-up ordinary GAMMA save. Restart fully.
 6. Send plmg.log plus the main game log for failures: missing menu/tooltip, wrong timing, lost/duplicated item, condition/ammo mismatch, sagging or exit failure.
 
 Old CtZ objects and free debug objects are not standalone pickup inputs. No addon-specific weapon-part state is restored. Missing dependencies or incompatible loaded ammo must preserve the inventory gun. Native timer/tooltip rendering and extracted-module operation are pending verification.
+
+For v0.8.1, confirm the interaction prompt displays Mount and Hold Pickup with your bound Use key, without a raw `st_plmg_*` ID. Check it again after save/load. Send `appdata/logs/plmg.log` for standalone diagnostics.

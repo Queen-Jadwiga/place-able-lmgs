@@ -11,7 +11,7 @@ end
 local function warn()
     if warned then return end
     warned=true
-    main_log("[Place-able LMGs 0.8.0] plmg.log unavailable; Place-able LMGs diagnostics continue in the main game log")
+    main_log("[Place-able LMGs 0.8.1] plmg.log unavailable; Place-able LMGs diagnostics continue in the main game log")
 end
 local function timestamp()
     local clock=rawget(_G,"os")
@@ -33,7 +33,7 @@ local function write(message)
         handle=files.open(path,started and "a" or "w")
         if not handle then return false end
         if not started then
-            if not handle:write("Place-able LMGs 0.8.0 - session log\n") then return false end
+            if not handle:write("Place-able LMGs 0.8.1 - session log\n") then return false end
         end
         -- One event per line; no uncontrolled multi-line log injection.
         local line=timestamp().." "..tostring(message):gsub("[\r\n]"," "):sub(1,4096).."\n"
@@ -48,12 +48,12 @@ local function write(message)
 end
 function printf(format,...)
     local ok,message=pcall(string.format,tostring(format),...)
-    if not ok then message="[Place-able LMGs 0.8.0] diagnostic formatting failed" end
+    if not ok then message="[Place-able LMGs 0.8.1] diagnostic formatting failed" end
     main_log(message)
     return write(message)
 end
 function event(message)
-    return printf("[Place-able LMGs 0.8.0] %s",tostring(message))
+    return printf("[Place-able LMGs 0.8.1] %s",tostring(message))
 end
 function status()
     return {started=started,failed=failed}

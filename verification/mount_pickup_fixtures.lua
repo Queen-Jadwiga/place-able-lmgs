@@ -67,7 +67,7 @@ local p=module('plmg_pickup');p.on_game_start()
 local function send(e,d,b,dis)
  local flags={ret_value=true};for _,f in ipairs(listeners[e] or {})do f(d,b,dis,flags)end;return flags.ret_value
 end
-for _,f in ipairs(listeners.actor_on_update)do f()end;check(prompt=='st_plmg_pickup_action','native combined mount/pickup prompt set on eligible converted gun')
+for _,f in ipairs(listeners.actor_on_update)do f()end;check(prompt=='st_plmg_mount_pickup_action','native combined mount/pickup prompt set on eligible converted gun')
 now=0;check(not send('on_before_key_press',20,4,false) and mounts==0,'press defers native mounting')
 now=100;check(not send('on_before_key_release',20,4,false) and mounts==1 and picked==0,'short release mounts once')
 now=200;send('on_before_key_press',20,4,false);now=2699;send('on_before_key_hold',20,4,false);check(picked==0,'hold below 2.5 seconds does not pickup');now=2700;send('on_before_key_hold',20,4,false);send('on_before_key_hold',20,4,false);send('on_before_key_release',20,4,false);check(picked==1 and mounts==1,'2.5 second hold picks once without mounting')

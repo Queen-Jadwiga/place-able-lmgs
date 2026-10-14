@@ -2,6 +2,6 @@
 <fomod>
   <Name>Placeable LMGs</Name>
   <Author>Queen-Jadwiga</Author>
-  <Version MachineVersion="0.8.0">0.8.0</Version>
+  <Version MachineVersion="0.8.1">0.8.1</Version>
   <Description>Place, operate and pick up supported base PKM and MG42 emplacements. PKM requires GAMMA only. MG42 additionally requires the MG-42/MG-3 addon from Hisalute's Weapon Packs Repacked; other addons from that pack are not required. MG3 mounting is not supported.</Description>
 </fomod>

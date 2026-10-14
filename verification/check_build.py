@@ -39,3 +39,10 @@ for p in scripts:
 assert not (root/'gamedata/scripts/plmg_mg_probe.script').exists()
 assert all(not re.search(r'ctz_(?!mount_conversion)',p.read_text()) for p in scripts)
 print('PASS owned dependency closure, no CtZ runtime imports or campaign files')
+
+# Native set_tip_text uses CStringTable translation: every requested ID must exist.
+strings={e.get('id'):e.findtext('text') for e in E.parse(root/'gamedata/configs/text/eng/st_plmg.xml').getroot()}
+for p in scripts:
+    for key in re.findall(r'set_tip_text\("([^"\n]+)"\)',p.read_text()):
+        assert key in strings and strings[key],(p.name,'unresolved native tooltip',key)
+print('PASS native tooltip IDs resolve to nonempty standalone localization')
