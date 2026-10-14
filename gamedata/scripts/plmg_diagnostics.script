@@ -1,0 +1,60 @@
+-- Dedicated session log using the engine's configured $logs$ alias.
+-- No absolute installation path, held file handle, or global log interception.
+local started=false
+local failed=false
+local warned=false
+local path=nil
+local function main_log(message)
+    local output=rawget(_G,"printf")
+    if type(output)=="function" then pcall(output,"%s",message) end
+end
+local function warn()
+    if warned then return end
+    warned=true
+    main_log("[Place-able LMGs 0.8.0] plmg.log unavailable; Place-able LMGs diagnostics continue in the main game log")
+end
+local function timestamp()
+    local clock=rawget(_G,"os")
+    if type(clock)=="table" and type(clock.date)=="function" then
+        local ok,value=pcall(clock.date,"%Y-%m-%d %H:%M:%S")
+        if ok then return value end
+    end
+    return "session"
+end
+local function write(message)
+    if failed then return false end
+    local handle
+    local ok,result=pcall(function()
+        local factory=rawget(_G,"getFS")
+        local files=rawget(_G,"io")
+        if type(factory)~="function" or type(files)~="table" or type(files.open)~="function" then return false end
+        if not path then path=factory():update_path("$logs$","plmg.log") end
+        if type(path)~="string" or path=="" then return false end
+        handle=files.open(path,started and "a" or "w")
+        if not handle then return false end
+        if not started then
+            if not handle:write("Place-able LMGs 0.8.0 - session log\n") then return false end
+        end
+        -- One event per line; no uncontrolled multi-line log injection.
+        local line=timestamp().." "..tostring(message):gsub("[\r\n]"," "):sub(1,4096).."\n"
+        if not handle:write(line) then return false end
+        local closed=handle:close();handle=nil
+        return closed~=nil and closed~=false
+    end)
+    if handle then pcall(function() handle:close() end) end
+    if not ok or not result then failed=true;warn();return false end
+    started=true
+    return true
+end
+function printf(format,...)
+    local ok,message=pcall(string.format,tostring(format),...)
+    if not ok then message="[Place-able LMGs 0.8.0] diagnostic formatting failed" end
+    main_log(message)
+    return write(message)
+end
+function event(message)
+    return printf("[Place-able LMGs 0.8.0] %s",tostring(message))
+end
+function status()
+    return {started=started,failed=failed}
+end

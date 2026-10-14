@@ -1,0 +1,345 @@
+-- Native stationary lifecycle for confirmed inventory placement only.
+local models={
+    pkm={section="plmg_mounted_pkm",visual="plmg\\mounted_pkm.ogf",name="PKM"},
+    mg42={section="plmg_mounted_mg42",visual="plmg\\mounted_mg42.ogf",name="MG-42",
+        textures={"mp5lng_mod\\wpn\\mg42\\mg42_1.dds","mp5lng_mod\\wpn\\mg42\\mg42_2.dds"}}
+}
+local sections={plmg_mounted_pkm=true,plmg_mounted_mg42=true}
+local tracked_section
+local tracked_id,last_owner,exit_deadline,anchor_position
+local anchor_reported=false
+local sample_start,sample_index
+local sample_delays={50,100,250,500,1000,2000,3000,5000,10000}
+local sample_bones={"link","joint_rotate_y","joint_rotate_x","joint_actor","wpn_body"}
+local height,distance=1.15,1.5
+local function event(message) plmg_diagnostics.event("LMG_NATIVE "..message) end
+local function xyz(v)
+    if not v then error("vector missing") end
+    for _,n in ipairs({v.x,v.y,v.z}) do
+        if type(n)~="number" or n~=n or n==math.huge or n==-math.huge then error("invalid vector") end
+    end
+    return string.format("%.6f,%.6f,%.6f",v.x,v.y,v.z)
+end
+local function vector_read(getter)
+    local ok,value=pcall(function()
+        -- Native exported getters fill an Fvector reference; they return void.
+        local v=vector():set(0,0,0)
+        getter(v)
+        return xyz(v)
+    end)
+    return ok and value or "unavailable"
+end
+local function sample_ammo(obj,phase)
+    local ok,value=pcall(function()
+        local stm=obj:get_stmgun()
+        local rounds,capacity,ammo_type=stm:GetAmmoElapsed(),stm:GetAmmoMagSize(),stm:GetAmmoType()
+        if type(rounds)~="number" or type(capacity)~="number" or type(ammo_type)~="number" or capacity~=100 or rounds<0 or rounds>capacity or rounds%1~=0 or ammo_type<0 or ammo_type>255 or ammo_type%1~=0 then error("invalid native ammo state") end
+        return "rounds="..rounds.." capacity="..capacity.." type="..ammo_type
+    end)
+    event("ammo_state phase="..phase.." id="..tostring(obj:id()).." "..(ok and value or "unavailable"))
+end
+local function sample_elements(obj,phase,elapsed)
+    -- Diagnostic failures must not change lifecycle state or native input.
+    for _,name in ipairs(sample_bones) do
+        local ok,message=pcall(function()
+            local shell=obj:get_physics_shell()
+            local element=shell and shell:get_element_by_bone_name(name)
+            if not element then return "element_missing" end
+            local transform=element:global_transform()
+            local linear=vector_read(function(v) element:get_linear_vel(v) end)
+            local angular=vector_read(function(v) element:get_angular_vel(v) end)
+            return "fixed="..tostring(element:is_fixed()).." pos="..xyz(transform.c).." basis_i="..xyz(transform.i).." basis_j="..xyz(transform.j).." basis_k="..xyz(transform.k).." linear_vel="..linear.." angular_vel="..angular
+        end)
+        event("element_transform phase="..phase.." id="..tostring(obj:id()).." bone="..name.." "..(ok and message or "unavailable").." elapsed_ms="..tostring(elapsed or "event"))
+    end
+    -- Only the two native jtJoint aiming bones: GetAnchorDynamic has unsupported
+    -- cases for other joint classes. Do not probe arbitrary model joints.
+    for _,name in ipairs({"joint_rotate_y","joint_rotate_x"}) do
+        local ok,message=pcall(function()
+            local shell=obj:get_physics_shell()
+            local joint=shell and shell:get_joint_by_bone_name(name)
+            if not joint then return "joint_missing" end
+            local axes=joint:get_axes_number()
+            if type(axes)~="number" or axes<0 or axes>3 or axes%1~=0 then error("invalid axis count") end
+            local fields={"axes="..axes,"anchor="..vector_read(function(v) joint:get_anchor(v) end)}
+            for axis=0,axes-1 do
+                fields[#fields+1]="axis"..axis.."="..vector_read(function(v) joint:get_axis_dir(axis,v) end)
+            end
+            return table.concat(fields," ")
+        end)
+        event("joint_state phase="..phase.." id="..tostring(obj:id()).." bone="..name.." "..(ok and message or "unavailable").." elapsed_ms="..tostring(elapsed or "event"))
+    end
+end
+local function profile_ready(ini,fs,section)
+    local ammo=ini:r_string(section,"ammo_class")
+    local count=0
+    for name in ammo:gmatch("[^,]+") do
+        name=name:match("^%s*(.-)%s*$")
+        if name=="" or not ini:section_exist(name) then return false,"Mounted ammunition unavailable: "..name end
+        count=count+1
+    end
+    if count==0 then return false,"Mounted ammunition list is empty" end
+    local function sound_file(value)
+        local path=value:match("^%s*([^,]+)"):match("^(.-)%s*$")
+        if path=="$no_sound" then return true end
+        return path~="" and fs:exist("$game_sounds$",path..".ogg")
+    end
+    for _,key in ipairs({"snd_shoot","snd_empty","snd_reload"}) do
+        local value=ini:r_string(section,key)
+        if ini:section_exist(value) then
+            local lines=ini:line_count(value)
+            if type(lines)~="number" or lines<1 or lines>256 then return false,"Mounted sound definition unavailable" end
+            local layers=0
+            for i=0,lines-1 do
+                local ok,name,path=ini:r_line(value,i,"","")
+                if not ok then return false,"Mounted sound definition unreadable" end
+                if name:match("^snd_%d+_layer%d*$") then
+                    if not sound_file(path) then return false,"Mounted sound asset missing: "..name end
+                    layers=layers+1
+                end
+            end
+            if layers==0 then return false,"Mounted sound layers unavailable" end
+        elseif not sound_file(value) then return false,"Mounted sound asset unavailable: "..key end
+    end
+    return true
+end
+local function tracked_object()
+    if not tracked_id or not db or not db.actor then return nil end
+    local se=alife():object(tracked_id)
+    if not se or se:section_name()~=tracked_section then tracked_id=nil;tracked_section=nil;last_owner=nil;exit_deadline=nil;anchor_position=nil;return nil end
+    local obj=level.object_by_id(tracked_id)
+    return obj,obj and obj:get_stmgun()
+end
+function net_spawn_after(obj)
+    if not obj or not sections[obj:section()] then return false end
+    tracked_id=nil;last_owner=nil;exit_deadline=nil;anchor_position=nil;anchor_reported=false;sample_start=nil;sample_index=nil
+    tracked_section=nil
+    local ok,message=pcall(function()
+        local section=obj:section()
+        local stm=obj:get_stmgun()
+        if not stm then return false end
+        local se=alife():object(obj:id())
+        if not se or se:section_name()~=section then return false end
+        local p=se.position
+        local shell=obj:get_physics_shell()
+        local root=shell and shell:get_element_by_bone_name("link")
+        if not root then event("anchor_failed reason=root_element_missing");return false end
+        -- Construct the shell at the server height. Moving it after construction
+        -- moves elements but leaves world-attached native joint anchors behind.
+        -- Never repair a bad saved shell by teleporting it here.
+        anchor_position=vector():set(p.x,p.y,p.z)
+        sample_elements(obj,"before_pin")
+        local live=obj:position()
+        local drift=(live.x-p.x)^2+(live.y-p.y)^2+(live.z-p.z)^2
+        if drift>0.0001 then event("anchor_failed reason=spawn_position_mismatch");anchor_position=nil;return false end
+        local root_transform=root:global_transform()
+        for _,name in ipairs({"joint_rotate_y","joint_rotate_x"}) do
+            local element=shell:get_element_by_bone_name(name)
+            local joint=shell:get_joint_by_bone_name(name)
+            if not element or not joint then event("anchor_failed reason=aim_constraint_missing bone="..name);anchor_position=nil;return false end
+            local anchor=vector():set(0,0,0)
+            joint:get_anchor(anchor)
+            -- Both prepared aiming bones have zero rest translation at the root.
+            local body=element:global_transform().c
+            xyz(anchor);xyz(body);xyz(root_transform.c)
+            for _,point in ipairs({anchor,body}) do
+                local delta=(point.x-root_transform.c.x)^2+(point.y-root_transform.c.y)^2+(point.z-root_transform.c.z)^2
+                if delta>0.0025 then event("anchor_failed reason=aim_constraint_mismatch bone="..name);anchor_position=nil;return false end
+            end
+        end
+        event("spawn_alignment root_and_aim_constraints=true post_spawn_teleport=false")
+        -- Native fixation is large mass/no gravity, not an immovable constraint.
+        -- Request exact integration for the small articulated test shell.
+        shell:set_force_exact_integration()
+        event("solver_requested mode=force_exact native_joint_limit_applies=true")
+        local elements={root}
+        for _,name in ipairs({"joint_rotate_y","joint_rotate_x","joint_actor"}) do
+            local element=shell:get_element_by_bone_name(name)
+            if not element then event("anchor_failed reason=rest_element_missing bone="..name);anchor_position=nil;return false end
+            elements[#elements+1]=element
+        end
+        local body=shell:get_element_by_bone_name("wpn_body")
+        if body then elements[#elements+1]=body else event("body_element_optional status=missing") end
+        for _,element in ipairs(elements) do
+            element:fix()
+            if not element:is_fixed() then event("anchor_failed reason=rest_element_not_fixed");anchor_position=nil;return false end
+        end
+        -- Native freeze fixes every shell element and excludes static-map contacts.
+        -- Unlike changing bone shapes/joint classes, it retains native exit callbacks.
+        -- Never unfreeze this stationary shell: that also releases its fixed root.
+        shell:freeze()
+        for _,element in ipairs(elements) do
+            if not element:is_fixed() then event("anchor_failed reason=freeze_not_fixed");anchor_position=nil;return false end
+        end
+        event("shell_policy native_freeze=true static_contact=false character_filter=npc saved_pose_repair=false")
+        if not root:is_fixed() then event("anchor_failed reason=root_not_fixed");anchor_position=nil;return false end
+        sample_elements(obj,"after_pin")
+        stm:SetActorOffsets(vector():set(0,-height,-distance))
+        sample_start=time_global();sample_index=1
+        tracked_id=obj:id();tracked_section=section;last_owner=nil;exit_deadline=nil
+        event("model section="..section)
+        sample_ammo(obj,"configured")
+        local tip_ok=pcall(function() obj:set_tip_text("st_plmg_mount_action") end)
+        if not tip_ok then event("native_tooltip_unavailable") end
+        event(string.format("configured id=%d base_fixed=true rest_elements_fixed=true requested_root=%.6f,%.6f,%.6f operator_offset=0,-1.15,-1.5",tracked_id,anchor_position.x,anchor_position.y,anchor_position.z))
+        return true
+    end)
+    if not ok or not message then event("configure_failed");return false end
+    return true
+end
+function ready(id) return tracked_id==id and anchor_position~=nil end
+function before_use(obj)
+    if plmg_optional.get("ctz_mount_conversion") then return false end
+    local conversion=plmg_optional.get("plmg_conversion")
+    if conversion and conversion.blocks(obj and obj:id()) then return false end
+    local ok,allowed=pcall(function()
+        if not obj or obj:section()~=tracked_section or tracked_id~=obj:id() or not anchor_position then return false end
+        local p=obj:position()
+        local drift=(p.x-anchor_position.x)^2+(p.y-anchor_position.y)^2+(p.z-anchor_position.z)^2
+        if drift>0.04 then event("mount_blocked reason=root_drift");return false end
+        return true
+    end)
+    if not ok or not allowed then event("mount_blocked reason=operator_not_configured");return false end
+    return true
+end
+local function observe()
+    local ok,err=pcall(function()
+        local obj,stm=tracked_object()
+        if not stm then return end
+        if sample_start and sample_index and sample_delays[sample_index] and time_global()-sample_start>=sample_delays[sample_index] then
+            local elapsed=time_global()-sample_start
+            -- A delayed update is one observation, not many fictional past samples.
+            while sample_delays[sample_index+1] and sample_delays[sample_index+1]<=elapsed do
+                event("sample_skipped target_ms="..sample_delays[sample_index].." elapsed_ms="..elapsed)
+                sample_index=sample_index+1
+            end
+            sample_elements(obj,"settled_"..sample_delays[sample_index].."ms",elapsed)
+            sample_index=sample_index+1
+        end
+        if not anchor_reported then
+            local p=obj:position()
+            event(string.format("live_root id=%d pos=%.6f,%.6f,%.6f delta_y=%.6f",tracked_id,p.x,p.y,p.z,anchor_position and p.y-anchor_position.y or 0))
+            anchor_reported=true
+        end
+        local owner=stm:GetOwner()
+        local id=owner and owner:id() or -1
+        if id~=last_owner then
+            event("owner id="..tracked_id.." owner="..id.." state="..(id==-1 and "unmounted" or "mounted"))
+            if db.actor then
+                local p=db.actor:position()
+                event(string.format("actor_feet state=%s pos=%.6f,%.6f,%.6f",id==-1 and "unmounted" or "mounted",p.x,p.y,p.z))
+            end
+            sample_elements(obj,id==-1 and "unmounted" or "mounted")
+            sample_ammo(obj,id==-1 and "unmounted" or "mounted")
+            if id==-1 and last_owner and last_owner~=-1 then sample_start=time_global();sample_index=1 end
+            last_owner=id
+            if id==-1 then
+                exit_deadline=nil
+                local p=obj:position()
+                event(string.format("exit_root id=%d pos=%.6f,%.6f,%.6f delta_y=%.6f",tracked_id,p.x,p.y,p.z,anchor_position and p.y-anchor_position.y or 0))
+            end
+        end
+        if exit_deadline and time_global()>=exit_deadline then
+            event("exit_still_mounted id="..tracked_id.." owner="..id)
+            exit_deadline=nil
+        end
+    end)
+    if not ok then event("observe_failed reason="..tostring(err));tracked_id=nil end
+end
+local function use_input(dik,bind,disabled)
+    if not key_bindings or bind~=key_bindings.kUSE then return end
+    local ok=pcall(function()
+        local obj,stm=tracked_object()
+        local owner=stm and stm:GetOwner()
+        if owner and db.actor and owner:id()==db.actor:id() then
+            event("use_input id="..tracked_id.." disabled="..tostring(disabled))
+            exit_deadline=time_global()+1500
+        end
+    end)
+    if not ok then event("use_observation_failed") end
+end
+function on_game_start()
+    plmg_integrations.register("plmg.mounted.observe","actor_on_update",observe)
+    plmg_integrations.register("plmg.mounted.use_input","on_before_key_press",use_input)
+end
+local function find_owned()
+    local sim=alife()
+    if not sim then return nil,"A-Life unavailable" end
+    local objects={}
+    -- Rare manual action only; rediscover by unique section after load, never by a cached numeric ID.
+    for id=0,65534 do
+        local se=sim:object(id)
+        if se and sections[se:section_name()] then objects[#objects+1]=se end
+    end
+    return objects
+end
+local function run(action)
+    local ok,success,message,id=pcall(action)
+    if not ok then event("status=failed reason="..tostring(success):gsub("[\r\n]"," "));return false,"Mounted creation failed; see plmg.log" end
+    event("status="..(success and "ok" or "blocked").." reason="..message)
+    return success,message,id
+end
+function spawn(kind,request)
+    if plmg_optional.get("ctz_mount_conversion") then return false,"CtZ already provides mounted LMGs; disable one package" end
+    return run(function()
+        local model=models[kind or "pkm"]
+        if not model then return false,"Unsupported mounted gun" end
+        local section=model.section
+        if not request or not db or not db.actor then return false,"Confirm inventory placement first" end
+        local objects,reason=find_owned()
+        if not objects then return false,reason end
+        if #objects>0 then return false,"An emplacement already exists; pack it up first" end
+        local ini=system_ini()
+        if not ini:section_exist(section) or not ini:section_exist("stationary_mgun") then return false,"Mounted configuration unavailable" end
+        if ini:r_string(section,"class")~="_S_STMGU" or not clsid or not clsid.stmgun_s then return false,"Native stationary class unavailable" end
+        if ini:r_string(section,"visual")~=model.visual then return false,"Place-able LMGs "..model.name.." visual was overridden" end
+        if not ini:line_exist(section,"ignore_collision") or ini:r_string(section,"ignore_collision")~="npc" then
+            return false,"Mounted character-contact filter was overridden"
+        end
+        for _,key in ipairs({"snd_shoot","snd_empty","snd_reload","ammo_class"}) do
+            if not ini:line_exist(section,key) then return false,"Mounted parameter missing: "..key end
+        end
+        local fs=getFS()
+        if not fs:exist("$game_textures$","plmg\\mount_black.dds") then return false,"Place-able LMGs black mount texture unavailable" end
+        local ready,profile_reason=profile_ready(ini,fs,section)
+        if not ready then return false,profile_reason end
+        event("profile section="..section.." rpm="..ini:r_string(section,"rpm").." hit_power="..ini:r_string(section,"hit_power").." bullet_speed="..ini:r_string(section,"bullet_speed").." dispersion="..ini:r_string(section,"fire_dispersion_base").." ammo_class="..ini:r_string(section,"ammo_class"))
+        if not fs:exist("$game_meshes$",model.visual) then return false,"Prepared Place-able LMGs "..model.name.." asset unavailable" end
+        for _,texture in ipairs(model.textures or {}) do
+            if not fs:exist("$game_textures$",texture) then return false,"MG-42 textures missing; enable the MG-42 weapon addon" end
+        end
+        if not safe_release_manager or type(safe_release_manager.release)~="function" then return false,"Native removal manager unavailable" end
+        -- Assign angle and clear flUsedAI_Locations before the next online update.
+        -- Otherwise native GameObject::net_Spawn may snap Y to the nav surface
+        -- before stationary joints are constructed, losing the deliberate height.
+        local place=request.place
+        local reason="Placement unavailable"
+        if not place then return false,reason end
+        local heading=place.heading
+        local rounds,ammo_type=100,0
+        if request then
+            rounds=request.rounds;ammo_type=request.ammo_type
+            if type(rounds)~="number" or rounds%1~=0 or rounds<0 or rounds>100 or type(ammo_type)~="number" or ammo_type%1~=0 or ammo_type<0 or ammo_type>255 then return false,"Invalid inventory ammunition" end
+            xyz(place.position)
+            if type(heading)~="number" or heading~=heading or math.abs(heading)>math.pi*2+0.001 then return false,"Invalid placement heading" end
+        end
+        local se=alife_create(section,place.position,place.lvid,place.gvid)
+        if not se then return false,"Native create returned no object" end
+        local angled=pcall(function() se.angle=vector():set(0,heading,0) end)
+        if not angled then safe_release_manager.release(se);return false,"Orientation failed; removal queued" end
+        local configured=pcall(function() se:use_ai_locations(false) end)
+        if not configured then safe_release_manager.release(se);return false,"Raised-position setup failed; removal queued" end
+        event("server_position_policy id="..tostring(se.id).." ai_locations_requested=false before_online=true")
+        -- Initialize the transferred belt once. Restores, mounts and exits never refill.
+        local loaded=pcall(function()
+            if se:get_ammo_magsize()~=100 then error("unexpected native magazine size") end
+            se:set_ammo_type(ammo_type)
+            se:set_ammo_elapsed(rounds)
+            if se:get_ammo_type()~=ammo_type or se:get_ammo_elapsed()~=rounds then error("native ammo initialization failed") end
+        end)
+        if not loaded then safe_release_manager.release(se);return false,"Initial loaded-ammunition setup failed; removal queued" end
+        event("fresh_ammo id="..tostring(se.id).." rounds="..rounds.." type="..ammo_type.." once_before_online=true origin="..(request and "inventory" or "debug"))
+        event(string.format("spawn id=%s section=%s level=%s pos=%.6f,%.6f,%.6f lvid=%d gvid=%d ammo=%d yaw=%.6f collision_filter=requested_npc",tostring(se.id),section,level.name(),place.position.x,place.position.y,place.position.z,place.lvid,place.gvid,rounds,heading))
+        return true,"Test "..model.name.." spawned; close PDA and use it",se.id
+    end)
+end

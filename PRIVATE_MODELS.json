@@ -1,0 +1,7 @@
+{
+  "public_repository_excludes_private_models": true,
+  "model_sha256": {
+    "gamedata/meshes/plmg/mounted_pkm.ogf": "4af0cca0d4bca91bcc563aecd1c19b8f3d9117394c86b91c83424bb6ab00088b",
+    "gamedata/meshes/plmg/mounted_mg42.ogf": "d202b7881bb67841456f2365a9b04455baead30cde754aa925471d2f63b08ad0"
+  }
+}

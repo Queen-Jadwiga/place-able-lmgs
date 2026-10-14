@@ -1,0 +1,51 @@
+-- Private registries cannot provide a registration receipt. Record requests and
+-- deliveries separately; never add events or inspect private engine upvalues.
+local registrations={};local wrappers={}
+function register(key, event, fn)
+    if plmg_optional.get("ctz_mount_conversion") then return false,"ctz-mounted-feature-present" end
+    local prior=registrations[key]
+    if type(fn)~="function" then return false,"invalid-listener" end
+    if prior and (prior.fn~=fn or prior.event~=event) then return false,"key-conflict" end
+    -- DXML owns on_xml_read outside axr_main's event table. Its epoch is the
+    -- captured global registrar, not an unrelated dispatcher event map.
+    local owner=event~="on_xml_read" and axr_main or nil
+    local setter=owner and owner.callback_set
+    local dispatcher=owner and owner.callbacks and owner.callbacks[event]
+    if prior and (prior.status=="requested" or prior.status=="observed") and prior.registrar==RegisterScriptCallback and prior.owner==owner and prior.setter==setter and prior.dispatcher==dispatcher then return true,prior.status end
+    local record=prior or {fn=fn,event=event,calls=0}
+    if not record.listener then
+        record.listener=function(...)
+            record.calls=record.calls+1;record.status="observed"
+            -- Preserve arguments/returns/errors. Observed means entry into the
+            -- listener, not successful completion of the callback body.
+            return fn(...)
+        end
+    end
+    registrations[key]=record
+    record.registrar=RegisterScriptCallback;record.owner=owner;record.setter=setter;record.dispatcher=dispatcher
+    record.calls=0;record.reason=nil;record.status="unavailable"
+    if type(RegisterScriptCallback)~="function" or (owner and owner.callbacks and dispatcher==nil) then return false,"unavailable" end
+    local ok,value=pcall(RegisterScriptCallback,event,record.listener)
+    local status=ok and value~=false and (record.calls>0 and "observed" or "requested") or "failed"
+    record.status=status;record.reason=not ok and tostring(value) or nil
+    return status=="requested" or status=="observed",status
+end
+function wrap(key, owner, name, factory)
+    local prior=wrappers[key]
+    if not owner or type(owner[name])~="function" then
+        wrappers[key]={owner=owner,name=name,status="unavailable",attempts=prior and prior.attempts or 0}
+        return false,"unavailable"
+    end
+    if prior and prior.owner==owner and owner[name]==prior.wrapper then return true,"installed" end
+    if prior and prior.attempts>=3 then return false,"replacement-limit" end
+    local original=owner[name];local wrapper=factory(original)
+    assert(type(wrapper)=="function","invalid-wrapper")
+    owner[name]=wrapper;wrappers[key]={owner=owner,name=name,wrapper=wrapper,status="installed",attempts=(prior and prior.attempts or 0)+1}
+    return true,"installed"
+end
+function status()
+    local out={}
+    for key,r in pairs(registrations) do out[key]={status=r.status,reason=r.reason,event=r.event,calls=r.calls} end
+    for key,r in pairs(wrappers) do out[key]={status=(r.owner and r.wrapper and r.owner[r.name]==r.wrapper) and "installed" or (r.status=="unavailable" and "unavailable" or "replaced"),attempts=r.attempts} end
+    return out
+end

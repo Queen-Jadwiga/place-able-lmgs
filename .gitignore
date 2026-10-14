@@ -1,0 +1,6 @@
+*.ogf
+*.blend
+*.log
+*.pyc
+__pycache__/
+dist/

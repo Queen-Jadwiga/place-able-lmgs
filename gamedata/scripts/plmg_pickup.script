@@ -1,0 +1,81 @@
+-- Short Use mounts on release; 2.5 seconds held packs up a converted gun.
+local hold,captured,prompted
+local duration=2500
+local function event(s) plmg_diagnostics.event("MOUNT_PICKUP "..s) end
+local function tip(s)
+    local news=plmg_optional.get("news_manager")
+    if news and db and db.actor then pcall(news.send_tip,db.actor,s,0,nil,4000) end
+end
+local function eligible()
+    local menu=plmg_optional.get("actor_menu")
+    if not menu or not menu.is_hud_free() or plmg_preview.active() then return nil end
+    local obj=plmg_conversion.pickup_target()
+    local look=obj and level.get_target_obj()
+    if not look or look:id()~=obj:id() or look:name()~=obj:name() then return nil end
+    return obj
+end
+local function clear(reason)
+    if hold then event("cancelled reason="..reason) end
+    hold=nil
+end
+local function press(dik,bind,disabled,flags)
+    if disabled or bind~=key_bindings.kUSE then return end
+    local ok,obj=pcall(eligible)
+    if not ok or not obj then return end
+    flags.ret_value=false;captured=dik
+    hold={id=obj:id(),name=obj:name(),start=time_global(),last=time_global()}
+    tip("Release Use to mount, or keep holding for 2.5 seconds to pack up.")
+    event("started id="..hold.id.." duration_ms="..duration)
+end
+local function held(dik,bind,disabled,flags)
+    if captured~=dik or bind~=key_bindings.kUSE then return end
+    flags.ret_value=false
+    if not hold then return end
+    local ok,obj=pcall(eligible)
+    if disabled or not ok or not obj or obj:id()~=hold.id or obj:name()~=hold.name then clear("target_or_input_changed");return end
+    hold.last=time_global()
+    if hold.last-hold.start>=duration then
+        hold=nil
+        local success,message=plmg_conversion.pickup()
+        event("finished success="..tostring(success));tip(message)
+    end
+end
+local function release(dik,bind,disabled,flags)
+    if captured~=dik or bind~=key_bindings.kUSE then return end
+    flags.ret_value=false;captured=nil
+    if not hold then return end
+    local prior=hold;hold=nil
+    local ok,obj=pcall(eligible)
+    if disabled or not ok or not obj or obj:id()~=prior.id or obj:name()~=prior.name then event("tap_cancelled");return end
+    if time_global()-prior.start>=duration then
+        local success,message=plmg_conversion.pickup();event("finished success="..tostring(success));tip(message)
+    else
+        -- Native non-forced holder path retains entry locks and before_use.
+        local attached,err=pcall(function() db.actor:attach_vehicle(obj,false) end)
+        event("tap_mount requested="..tostring(attached)..(attached and "" or " reason="..tostring(err)))
+    end
+end
+local function tick()
+    local ok,obj=pcall(eligible)
+    if ok and obj then
+        if prompted~=obj:id() then
+            local changed=pcall(function() obj:set_tip_text("st_plmg_pickup_action") end)
+            if not changed then event("tooltip_unavailable id="..obj:id()) end
+            prompted=obj:id()
+        end
+    else prompted=nil end
+    if not hold then return end
+    if not ok or not obj or obj:id()~=hold.id or obj:name()~=hold.name or time_global()-hold.last>500 then clear("target_or_hold_lost") end
+end
+local function transfer_input(_,bind,disabled,flags)
+    if not disabled and plmg_conversion.returning() and (bind==key_bindings.kWPN_FIRE or bind==key_bindings.kWPN_ZOOM or bind==key_bindings.kINVENTORY) then flags.ret_value=false end
+end
+function on_game_start()
+    plmg_integrations.register("plmg.pickup.press","on_before_key_press",press)
+    plmg_integrations.register("plmg.pickup.hold","on_before_key_hold",held)
+    plmg_integrations.register("plmg.pickup.release","on_before_key_release",release)
+    plmg_integrations.register("plmg.pickup.tick","actor_on_update",tick)
+    plmg_integrations.register("plmg.pickup.load","load_state",function() hold=nil;captured=nil;prompted=nil end)
+    plmg_integrations.register("plmg.pickup.block_press","on_before_key_press",transfer_input)
+    plmg_integrations.register("plmg.pickup.block_hold","on_before_key_hold",transfer_input)
+end

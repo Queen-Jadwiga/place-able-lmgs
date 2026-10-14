@@ -1,0 +1,149 @@
+-- Native visual preview; confirmed placement enters the saved inventory transfer.
+local choices={wpn_pkm="plmg\\mounted_pkm.ogf",wpn_pkm_siber="plmg\\mounted_pkm.ogf",wpn_mg42="plmg\\mounted_mg42.ogf"}
+local session
+local function rejection(reason) return nil,reason end
+local name="plmg_preview"
+local function event(s) plmg_diagnostics.event("MOUNT_PREVIEW "..s) end
+local function tip(s)
+    local news=plmg_optional.get("news_manager")
+    if news and type(news.send_tip)=="function" and db and db.actor then pcall(news.send_tip,db.actor,s,0,nil,6000) end
+end
+function eligible(obj)
+    local ok,value=pcall(function()
+        if not obj or not choices[obj:section()] or not db or not db.actor then return false end
+        local owner=obj:parent()
+        if not owner or owner:id()~=db.actor:id() then return false end
+        if obj:weapon_is_scope() or obj:weapon_is_silencer() or obj:weapon_is_grenadelauncher() then return false end
+        local upgraded=false
+        obj:iterate_installed_upgrades(function() upgraded=true;return true end)
+        return not upgraded
+    end)
+    return ok and value==true
+end
+local function clear(reason)
+    session=nil
+    if level and level.present() then pcall(function() level.remove_attachment(name) end) end
+    event("closed reason="..reason.." item_consumed=false")
+end
+function start(obj)
+    if session or not eligible(obj) then return false end
+    local model=choices[obj:section()]
+    if not getFS():exist("$game_meshes$",model) or not getFS():exist("$game_textures$","plmg\\placement_preview.dds") then return false end
+    session={id=obj:id(),section=obj:section(),map=level.name(),heading=0,valid=false,last_tick=0}
+    tip("Aim at nearby level ground. Q/E rotate; Use places the gun; Escape cancels. Use confirms placement; Escape keeps your inventory gun.")
+    event("started item="..session.id.." section="..session.section)
+    return true
+end
+local function point(v)
+    if not v then error("position unavailable") end
+    for _,n in ipairs({v.x,v.y,v.z}) do if type(n)~="number" or n~=n or math.abs(n)>100000 then error("invalid position") end end
+    return vector():set(v.x,v.y,v.z)
+end
+local function ray(origin,direction,range)
+    local pick=ray_pick()
+    pick:set_position(point(origin));pick:set_direction(point(direction));pick:set_range(range)
+    -- Static only. Native rq_result material lookup assumes a static triangle.
+    pick:set_flags(2) -- collide::rqtStatic = (1 << 1); 1 is rqtObject
+    if not pick:query() then return nil end
+    local dist=pick:get_distance()
+    if type(dist)~="number" or dist~=dist or dist<=0 or dist>range then return nil end
+    local normal=point(pick:get_normal())
+    return vector():set(origin.x+direction.x*dist,origin.y+direction.y*dist,origin.z+direction.z*dist),normal
+end
+local function placement()
+    local cam=device()
+    local dir=point(cam.cam_dir)
+    local length=math.sqrt(dir.x^2+dir.y^2+dir.z^2)
+    if length<0.001 then return rejection("camera_direction") end
+    dir:set(dir.x/length,dir.y/length,dir.z/length)
+    local center,normal=ray(point(cam.cam_pos),dir,5)
+    if not center then return rejection("surface_miss") end
+    if normal.y<0.94 then return rejection("surface_slope") end
+    local actor=point(db.actor:position())
+    local distance=(center.x-actor.x)^2+(center.z-actor.z)^2
+    if distance<0.64 or distance>16 then return rejection("surface_distance") end
+    if math.abs(center.y-actor.y)>0.6 then return rejection("surface_height") end
+    for _,offset in ipairs({{0.55,0},{-0.55,0},{0,0.55},{0,-0.55}}) do
+        local hit,n=ray(vector():set(center.x+offset[1],center.y+1,center.z+offset[2]),vector():set(0,-1,0),2)
+        if not hit then return rejection("footprint_miss") end
+        if n.y<0.94 then return rejection("footprint_slope") end
+        if math.abs(hit.y-center.y)>0.10 then return rejection("footprint_uneven") end
+    end
+    local id=level.vertex_id(center)
+    if type(id)~="number" or id<0 or id==4294967295 then return rejection("nav_vertex") end
+    local nav=point(level.vertex_position(id))
+    if math.abs(nav.y-center.y)>0.35 then return rejection("nav_height") end
+    if (nav.x-center.x)^2+(nav.z-center.z)^2>1 then return rejection("nav_distance") end
+    return {x=center.x,y=center.y+1.15,z=center.z,lvid=id,gvid=db.actor:game_vertex_id()}
+end
+local function hud_free()
+    local menu=plmg_optional.get("actor_menu")
+    return menu and type(menu.is_hud_free)=="function" and menu.is_hud_free()
+end
+local function tick()
+    if not session then return end
+    local ok,err=pcall(function()
+        if not db or not db.actor or not level.present() or level.name()~=session.map or not db.actor:alive() then clear("actor_or_map_changed");return end
+        local obj=level.object_by_id(session.id)
+        if not obj or obj:section()~=session.section or not eligible(obj) then clear("source_unavailable");return end
+        if not hud_free() then return end
+        local now=time_global()
+        if now-session.last_tick<100 then return end
+        session.last_tick=now
+        local candidate,reason=placement()
+        local state=candidate and "valid" or reason
+        if session.last_state~=state then event("surface state="..tostring(state).." query_target=2");session.last_state=state end
+        local preview=level.get_attachment(name)
+        if not candidate then
+            session.valid=false;session.position=nil
+            if preview then level.remove_attachment(name) end
+            return
+        end
+        if not preview then
+            preview=level.add_attachment(name,choices[session.section])
+            if not preview then error("native attachment unavailable") end
+            preview:set_type(script_attachment_type.World)
+            event("visual_created model="..choices[session.section])
+            -- Solid cyan silhouette; only this private render instance changes.
+            preview:set_shader(0,"models\\model","plmg\\placement_preview")
+        end
+        preview:set_position(vector():set(candidate.x,candidate.y,candidate.z))
+        -- Attachment offsets use HPB degrees, unlike server XYZ radians.
+        preview:set_rotation(vector():set(session.heading,0,0))
+        session.valid=true;session.position=candidate
+    end)
+    if not ok then event("failed reason="..tostring(err));clear("native_preview_failed") end
+end
+local function key(dik,bind,disabled,flags)
+    if not session or disabled or not hud_free() then return end
+    local keys=DIK_keys or {}
+    if dik==keys.DIK_ESCAPE then flags.ret_value=false;clear("cancelled");return end
+    if dik==keys.DIK_Q or dik==keys.DIK_E then
+        flags.ret_value=false
+        session.heading=(session.heading+(dik==keys.DIK_Q and -1 or 1)*15)%360
+        session.last_tick=0
+        return
+    end
+    if bind==key_bindings.kUSE then
+        flags.ret_value=false
+        local ok,p=pcall(placement)
+        if not ok or not p then session.valid=false;session.position=nil;tip("Aim at clear, level ground with room for the tripod.");return end
+        session.position=p
+        event(string.format("validated section=%s root=%.6f,%.6f,%.6f yaw_degrees=%.3f lvid=%d gvid=%d item_consumed=false",session.section,p.x,p.y,p.z,session.heading,p.lvid,p.gvid))
+        local obj=level.object_by_id(session.id)
+        local converted,message=plmg_conversion.begin(obj,p,session.heading)
+        if converted then clear("conversion_started") end
+        tip(message)
+    elseif bind==key_bindings.kWPN_FIRE or bind==key_bindings.kWPN_ZOOM then flags.ret_value=false end
+end
+local function hold(dik,bind,disabled,flags)
+    if session and not disabled and hud_free() and (bind==key_bindings.kWPN_FIRE or bind==key_bindings.kWPN_ZOOM or dik==DIK_keys.DIK_Q or dik==DIK_keys.DIK_E) then flags.ret_value=false end
+end
+function active() return session~=nil end
+function cancel() if session then clear("cancelled") end end
+function on_game_start()
+    plmg_integrations.register("plmg.preview","actor_on_update",tick)
+    plmg_integrations.register("plmg.keys","on_before_key_press",key)
+    plmg_integrations.register("plmg.hold","on_before_key_hold",hold)
+    plmg_integrations.register("plmg.load","load_state",function() clear("save_loaded") end)
+end

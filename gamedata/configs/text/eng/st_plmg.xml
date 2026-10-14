@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<string_table>
+<string id="st_plmg_mount"><text>Mount</text></string>
+<string id="st_plmg_mount_action"><text>$$ACTION_USE$$ Mount</text></string>
+<string id="st_plmg_mount_pickup_action"><text>$$ACTION_USE$$ Mount\nHold $$ACTION_USE$$ Pickup</text></string>
+</string_table>

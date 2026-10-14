@@ -1,0 +1,11 @@
+-- Optional addons are observed only after the host has loaded them. _G[name]
+-- would invoke X-Ray's namespace autoloader and log missing files.
+function get(name)
+    local value=rawget(_G,name)
+    return type(value)=="table" and value or nil
+end
+function field(name,key)
+    local module=get(name)
+    if not module then return nil end
+    return rawget(module,key)
+end

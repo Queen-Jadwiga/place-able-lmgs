@@ -1,0 +1,19 @@
+; Place-able LMGs-only model userdata. Existing vanilla cover-model physics/geometry retained.
+[mounted_weapon_definition]
+rotate_x_bone = joint_rotate_x
+rotate_y_bone = joint_rotate_y
+fire_bone = joint_fire
+camera_bone = joint_camera
+actor_bone = link
+exit_position = 0, -1.15, -2.0
+wpn_section = plmg_mounted_mg42
+
+; Applied natively during CreateSkeleton, before restored sync states and Lua.
+; Keep rotation elements physical: native exit restores their physics callbacks.
+[physics_common]
+fixed_bones = link, joint_rotate_y, joint_rotate_x, joint_actor
+
+; This is an anchored emplacement, not a terrain-supported loose weapon.
+; The native loader checks key presence, not its boolean value.
+[collide]
+ignore_static = true

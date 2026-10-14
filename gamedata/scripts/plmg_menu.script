@@ -1,0 +1,47 @@
+local property="plmg_mount"
+local function install()
+    local ui=plmg_optional.get("ui_inventory")
+    local cls=ui and ui.UIInventory
+    if not cls then return end
+    cls.Cond_PLMGMount=function(_,obj) return plmg_preview.eligible(obj) and not plmg_preview.active() and not plmg_conversion.pending() end
+    cls.Action_PLMGMount=function(self,id)
+        local obj=self:CheckItem(id,"Place-able LMGs Mount")
+        if not obj or not plmg_preview.start(obj) then return false end
+        -- Native Close also updates actor_menu mode and unregisters the UI.
+        local ok,err=pcall(function() self:Close() end)
+        if not ok then
+            plmg_preview.cancel()
+            plmg_diagnostics.event("MOUNT_PREVIEW inventory_close_failed reason="..tostring(err))
+            return false
+        end
+        return true
+    end
+    plmg_integrations.wrap("plmg.menu",cls,"InitProperties",function(original)
+        return function(self,obj,bag,...)
+            if self.properties then
+                local last=0
+                for key,value in pairs(self.properties) do if key~=property and type(value.index)=="number" then last=math.max(last,value.index) end end
+                self.properties[property]={index=last+1,name="st_plmg_mount",mode={inventory=true},cont={actor_bag=true,actor_equ=true},precondition1={"Cond_PLMGMount"},action={"Action_PLMGMount"}}
+            end
+            return original(self,obj,bag,...)
+        end
+    end)
+    local cmo=plmg_optional.get("context_menu_overhaul")
+    if not cmo then return end
+    plmg_integrations.wrap("plmg.cmo.icon",cmo,"get_icon",function(original)
+        return function(id,label,...)
+            if id==property then return "ui_plmg_mount" end
+            return original(id,label,...)
+        end
+    end)
+    plmg_integrations.wrap("plmg.cmo.group",cmo,"get_group",function(original)
+        return function(id,...)
+            if id~=property then return original(id,...) end
+            local last=2
+            local ok,groups=pcall(function() return cmo.ini:collect_section("groups") end)
+            if ok and type(groups)=="table" then for _,v in pairs(groups) do local n=tonumber(v);if n and n==n then last=math.max(last,n) end end end
+            return last+1
+        end
+    end)
+end
+function on_game_start() plmg_integrations.register("plmg.menu.install","actor_on_update",install) end

@@ -1,0 +1,292 @@
+-- One saved transfer record; source is removed only after native setup succeeds.
+local record,invalid,started,last_state
+local key="plmg_transfer"
+local supported={wpn_pkm="pkm",wpn_pkm_siber="pkm",wpn_mg42="mg42"}
+local target={pkm="plmg_mounted_pkm",mg42="plmg_mounted_mg42"}
+local stages={preparing=true,consuming=true,active=true,rollback=true,returning=true,removing_mount=true,return_rollback=true}
+local function event(s) plmg_diagnostics.event("MOUNT_CONVERSION "..s) end
+local function tip(s)
+    local news=plmg_optional.get("news_manager")
+    if news and db and db.actor then pcall(news.send_tip,db.actor,s,0,nil,6000) end
+end
+local function number(n,lo,hi,integer)
+    return type(n)=="number" and n==n and n>=lo and n<=hi and (not integer or n%1==0)
+end
+local function copy(r)
+    if not r then return nil end
+    local c={};for k,v in pairs(r) do c[k]=v end;return c
+end
+local fields={stage=true,source_id=true,source_section=true,source_name=true,target_id=true,target_section=true,target_name=true,actor_id=true,map=true,x=true,y=true,z=true,rounds=true,ammo_type=true,source_ammo_type=true,condition=true,return_id=true,return_name=true,return_rounds=true,return_ammo_type=true}
+local function valid(r)
+    if type(r)~="table" or not stages[r.stage] or not supported[r.source_section] or target[supported[r.source_section]]~=r.target_section then return false end
+    for k,v in pairs(r) do if not fields[k] or (type(v)~="string" and type(v)~="number") then return false end end
+    for _,k in ipairs({"source_name","target_name","map"}) do if type(r[k])~="string" or #r[k]<1 or #r[k]>256 then return false end end
+    for _,k in ipairs({"source_id","target_id","actor_id"}) do if not number(r[k],0,65534,true) then return false end end
+    for _,k in ipairs({"x","y","z"}) do if not number(r[k],-100000,100000) then return false end end
+    if r.stage=="returning" or r.stage=="removing_mount" or r.stage=="return_rollback" then
+        if not number(r.return_id,0,65534,true) or type(r.return_name)~="string" or #r.return_name<1 or #r.return_name>256 or not number(r.return_rounds,0,100,true) or not number(r.return_ammo_type,0,255,true) then return false end
+    end
+    return number(r.rounds,0,100,true) and number(r.ammo_type,0,255,true) and number(r.source_ammo_type,0,255,true) and number(r.condition,0,1)
+end
+local function server(id,section,name)
+    local se=alife():object(id)
+    if not se then return nil,"absent" end
+    if se:section_name()~=section or se:name()~=name then return nil,"identity_changed" end
+    return se,"matched"
+end
+local function mounted()
+    local se,status=server(record.target_id,record.target_section,record.target_name)
+    if se then
+        local p=se.position
+        if not p or (p.x-record.x)^2+(p.y-record.y)^2+(p.z-record.z)^2>0.04 then return nil,"position_changed" end
+    end
+    return se,status
+end
+local function ammo_names(section)
+    local out={}
+    for name in system_ini():r_string(section,"ammo_class"):gmatch("[^,]+") do out[#out+1]=name:match("^%s*(.-)%s*$") end
+    return out
+end
+local function snapshot(obj)
+    if not plmg_preview.eligible(obj) then return nil,"This gun is no longer available for mounting." end
+    local rounds=obj:get_ammo_in_magazine()
+    local ammo_type=obj:get_ammo_type()
+    local condition=obj:condition()
+    if not number(rounds,0,100,true) or not number(ammo_type,0,255,true) or not number(condition,0,1) then return nil,"Weapon state could not be read." end
+    local kind=supported[obj:section()]
+    if not kind then return nil,"This weapon has no mounted model." end
+    local mapped=0
+    if rounds>0 then
+        local source=ammo_names(obj:section())[ammo_type+1]
+        mapped=nil
+        for i,name in ipairs(ammo_names(target[kind])) do if name==source then mapped=i-1;break end end
+        if not mapped then return nil,"Unload this gun before mounting; its loaded ammunition is not supported by the mounted version." end
+    end
+    return {rounds=rounds,ammo_type=mapped,source_ammo_type=ammo_type,condition=condition,kind=kind}
+end
+function pending() return invalid or (record and record.stage~="active") or false end
+function blocks(id) return invalid or (record and record.target_id==id and record.stage~="active") or false end
+local function rollback(reason)
+    record.stage="rollback";event("rollback reason="..reason.." source_consumed=false")
+    tip("Mounting failed. Your inventory gun has been kept.")
+end
+function returning()
+    return record and (record.stage=="returning" or record.stage=="removing_mount" or record.stage=="return_rollback") or false
+end
+function pickup_target()
+    local ok,obj=pcall(function()
+        if invalid or not record or record.stage~="active" or not db or not db.actor or not db.actor:alive() or level.name()~=record.map or db.actor:get_attached_vehicle() then return nil end
+        local se=mounted()
+        local obj=se and level.object_by_id(record.target_id)
+        if not obj or not plmg_mounted.ready(record.target_id) or obj:get_stmgun():GetOwner() then return nil end
+        local p,a=obj:position(),db.actor:position()
+        if (p.x-a.x)^2+(p.y-a.y)^2+(p.z-a.z)^2>6.25 then return nil end
+        return obj
+    end)
+    return ok and obj or nil
+end
+local function reset_return()
+    record.return_id=nil;record.return_name=nil;record.return_rounds=nil;record.return_ammo_type=nil
+end
+local function return_tick(se,status)
+    local item,item_status=server(record.return_id,record.source_section,record.return_name)
+    if record.stage=="return_rollback" then
+        if item_status=="absent" then
+            if not level.object_by_id(record.return_id) then reset_return();record.stage="active";event("pickup_rollback_complete");tip("Packing up stopped. The mounted gun is still in place.") end
+            return
+        end
+        if not item then invalid=true;event("pickup_suspended reason=return_identity_changed");return end
+        if item.parent_id~=record.actor_id then invalid=true;event("pickup_suspended reason=return_server_owner_changed");return end
+        local obj=level.object_by_id(record.return_id)
+        if obj and (not obj:parent() or obj:parent():id()~=record.actor_id) then invalid=true;event("pickup_suspended reason=return_owner_changed");return end
+        alife_release(item,"Place-able LMGs failed inventory return")
+        return
+    end
+    if not item then invalid=true;event("pickup_suspended reason=return_"..item_status);return end
+    if item.parent_id~=record.actor_id then invalid=true;event("pickup_suspended reason=return_server_owner_changed");return end
+    local obj=level.object_by_id(record.return_id)
+    if obj and (not obj:parent() or obj:parent():id()~=record.actor_id) then invalid=true;event("pickup_suspended reason=return_owner_changed");return end
+    if record.stage=="removing_mount" then
+        if status=="absent" then
+            if not level.object_by_id(record.target_id) then
+                event("pickup_committed return="..record.return_id.." target="..record.target_id.." rounds="..record.return_rounds)
+                record=nil;tip("Gun packed up and returned to inventory.")
+            end
+            return
+        end
+        if not se then invalid=true;event("pickup_suspended reason=target_"..status);return end
+        local live=level.object_by_id(record.target_id)
+        if live and live:get_stmgun():GetOwner() then invalid=true;event("pickup_suspended reason=occupied");return end
+        safe_release_manager.release(se)
+        return
+    end
+    if not se then invalid=true;event("pickup_suspended reason=target_"..status);return end
+    if not obj then
+        if not started then started=time_global() end
+        if time_global()-started>10000 then record.stage="return_rollback";event("pickup_rollback reason=inventory_spawn_timeout") end
+        return
+    end
+    local ok,err=pcall(function()
+        -- Never unload: unloading could create another ammo box. Zero the
+        -- generated magazine, select mapped ammo, then initialize just once.
+        obj:set_ammo_elapsed(0)
+        obj:set_ammo_type(record.return_ammo_type)
+        obj:set_ammo_elapsed(record.return_rounds)
+        obj:set_condition(record.condition)
+        if obj:get_ammo_in_magazine()~=record.return_rounds or obj:get_ammo_type()~=record.return_ammo_type or math.abs(obj:condition()-record.condition)>0.005 then error("inventory readback mismatch") end
+    end)
+    if not ok then record.stage="return_rollback";event("pickup_rollback reason="..tostring(err));return end
+    record.stage="removing_mount"
+    event("return_configured id="..record.return_id.." rounds="..record.return_rounds.." type="..record.return_ammo_type.." once=true")
+    safe_release_manager.release(se)
+end
+function pickup()
+    local obj=pickup_target()
+    if not obj then return false,"Dismount and stand close to the gun before packing it up." end
+    local created_id
+    local ok,result,message=pcall(function()
+        local stm=obj:get_stmgun()
+        local rounds,ammo_type=stm:GetAmmoElapsed(),stm:GetAmmoType()
+        if not number(rounds,0,100,true) or not number(ammo_type,0,255,true) then return false,"The mounted ammunition could not be read." end
+        local mapped=0
+        if rounds>0 then
+            local name=ammo_names(record.target_section)[ammo_type+1]
+            mapped=nil
+            for i,v in ipairs(ammo_names(record.source_section)) do if v==name then mapped=i-1;break end end
+            if not mapped then return false,"The current belt cannot be returned to this weapon. Fire it empty before packing up." end
+        end
+        local capacity=system_ini():r_u32(record.source_section,"ammo_mag_size")
+        if not number(capacity,1,65535,true) or rounds>capacity then return false,"The current belt is too large for the inventory weapon." end
+        -- The helper queues the native inventory item; initialize its server
+        -- count and condition before the next client update, then read back live.
+        local actor=db.actor
+        local item=alife_create(record.source_section,actor:position(),actor:level_vertex_id(),actor:game_vertex_id(),actor:id())
+        if not item then return false,"Inventory creation failed. The mounted gun is still in place." end
+        created_id=item.id
+        local return_name=item:name()
+        if type(return_name)~="string" or #return_name<1 or #return_name>256 then error("inventory identity unavailable") end
+        record.return_id=item.id;record.return_name=return_name;record.return_rounds=rounds;record.return_ammo_type=mapped;record.stage="returning"
+        item:set_ammo_elapsed(0);item.condition=record.condition
+        if item:get_ammo_elapsed()~=0 or math.abs(item.condition-record.condition)>0.0001 then error("inventory server initialization failed") end
+        started=time_global()
+        event("pickup_created return="..item.id.." target="..record.target_id.." rounds="..rounds.." condition="..record.condition)
+        return true,"Packing up the gun..."
+    end)
+    if not ok then
+        if created_id then
+            if record.return_id then record.stage="return_rollback" else
+                local cleaned=pcall(function()
+                    local item=alife():object(created_id)
+                    if not item or item:section_name()~=record.source_section or item.parent_id~=db.actor:id() or alife_release(item,"Place-able LMGs failed return creation")~=true then error("return cleanup unavailable") end
+                end)
+                if not cleaned then invalid=true end
+            end
+        end
+        event("pickup_failed reason="..tostring(result));return false,"Packing up failed. The mounted gun is still in place."
+    end
+    return result,message
+end
+local function tick_body()
+    if not record or invalid or not db or not db.actor or not level.present() then return end
+    local se,status=mounted()
+    if returning() then return_tick(se,status);return end
+    if record.stage=="active" then
+        if status=="absent" then event("mounted_removed id="..record.target_id);record=nil end
+        return
+    end
+    if record.stage=="rollback" then
+        if status=="absent" then event("rollback_complete");record=nil;return end
+        if not se then event("rollback_suspended reason="..status);invalid=true;return end
+        safe_release_manager.release(se)
+        return
+    end
+    if not se then
+        -- Never fabricate a refund after source release: absence may be a late
+        -- native transition. Suspend for review instead of duplicating a weapon.
+        if record.stage=="consuming" then invalid=true;event("transfer_suspended reason=target_"..status);return end
+        if status=="absent" then event("spawn_lost source_consumed=false");record=nil;tip("Mounting failed. Your inventory gun has been kept.");return end
+        rollback("target_"..status);return
+    end
+    local source,source_status=server(record.source_id,record.source_section,record.source_name)
+    if record.stage=="consuming" then
+        if source_status=="absent" and not level.object_by_id(record.source_id) then
+            record.stage="active";event("committed target="..record.target_id.." rounds="..record.rounds.." source_consumed=true");tip("Gun mounted and ready.")
+        elseif source_status=="identity_changed" then invalid=true;event("transfer_suspended reason=source_identity_changed") end
+        return
+    end
+    if level.name()~=record.map or not db.actor:alive() then rollback("actor_or_map_changed");return end
+    if not started then started=time_global() end
+    if not plmg_mounted.ready(record.target_id) then
+        if time_global()-started>10000 then rollback("native_setup_timeout") end
+        return
+    end
+    local obj=source and level.object_by_id(record.source_id)
+    local data,reason=obj and snapshot(obj)
+    if not obj or not data or obj:name()~=record.source_name or db.actor:id()~=record.actor_id or data.rounds~=record.rounds or data.source_ammo_type~=record.source_ammo_type or math.abs(data.condition-record.condition)>0.0001 then rollback("source_changed");return end
+    record.stage="consuming"
+    event("source_release_requested id="..record.source_id.." target="..record.target_id)
+    -- Supplied alife_release handles inventory weapon removal and server bookkeeping.
+    local ok,result=pcall(alife_release,source,"Place-able LMGs inventory mount")
+    if not ok or result~=true then
+        local still=server(record.source_id,record.source_section,record.source_name)
+        if still then rollback("source_release_failed") else event("release_result_uncertain waiting_for_absence=true") end
+    end
+end
+local function tick()
+    local ok,err=pcall(tick_body)
+    if not ok then
+        event("transfer_error reason="..tostring(err))
+        if record and record.stage=="preparing" then rollback("native_exception") elseif record and record.stage=="returning" then record.stage="return_rollback" else invalid=true end
+    end
+    local state=invalid and "suspended" or record and record.stage or "idle"
+    if state~=last_state then event("state="..state);last_state=state end
+end
+function begin(obj,p,heading)
+    if invalid or record then return false,"An emplacement or transfer already exists. Remove it before mounting another gun." end
+    local created_id,created_section
+    local ok,success,message=pcall(function()
+        if type(alife_release)~="function" then return false,"Native inventory removal is unavailable." end
+        local data,reason=snapshot(obj)
+        if not data then return false,reason end
+        for _,k in ipairs({"x","y","z"}) do if not number(p[k],-100000,100000) then return false,"Placement is unavailable." end end
+        if not number(p.lvid,0,4294967294,true) or not number(p.gvid,0,65534,true) or not number(heading,0,359.99999) then return false,"Placement is unavailable." end
+        local source=alife():object(obj:id())
+        if not source or source:section_name()~=obj:section() or source:name()~=obj:name() then return false,"Source identity is unavailable." end
+        local source_id,source_section,source_name,actor_id,map=obj:id(),obj:section(),obj:name(),db.actor:id(),level.name()
+        local created,why,id=plmg_mounted.spawn(data.kind,{place={position=vector():set(p.x,p.y,p.z),lvid=p.lvid,gvid=p.gvid,heading=heading*math.pi/180},rounds=data.rounds,ammo_type=data.ammo_type})
+        if not created then return false,why end
+        created_id=id;created_section=target[data.kind]
+        local se=alife():object(id)
+        if not se then return false,"Mounted creation could not be observed; inventory gun retained." end
+        record={stage="preparing",source_id=source_id,source_section=source_section,source_name=source_name,target_id=id,target_section=created_section,target_name=se:name(),actor_id=actor_id,map=map,x=p.x,y=p.y,z=p.z,rounds=data.rounds,ammo_type=data.ammo_type,source_ammo_type=data.source_ammo_type,condition=data.condition}
+        started=time_global()
+        event("created target="..id.." source="..obj:id().." rounds="..data.rounds.." ammo_type="..data.ammo_type.." source_consumed=false")
+        return true,"Setting up the mounted gun..."
+    end)
+    if not ok then
+        if created_id and not record then
+            pcall(function()
+                local se=alife():object(created_id)
+                if se and se:section_name()==created_section then safe_release_manager.release(se) end
+            end)
+        end
+        event("begin_failed reason="..tostring(success));return false,"Mounting failed. Your inventory gun has been kept." end
+    return success,message
+end
+local function save(data)
+    data[key]={version=1,record=copy(record),invalid=invalid==true}
+end
+local function restore(data)
+    record=nil;invalid=false;started=nil;last_state=nil
+    local saved=data and data[key]
+    if saved==nil then return end
+    if type(saved)~="table" or saved.version~=1 or type(saved.invalid)~="boolean" or (saved.record~=nil and not valid(saved.record)) then invalid=true;event("load_suspended reason=invalid_record");return end
+    invalid=saved.invalid;record=copy(saved.record)
+    if record and (record.stage=="preparing" or record.stage=="returning") then started=time_global() end
+    event("restored stage="..(record and record.stage or "idle"))
+end
+function on_game_start()
+    plmg_integrations.register("plmg.convert.update","actor_on_update",tick)
+    plmg_integrations.register("plmg.convert.save","save_state",save)
+    plmg_integrations.register("plmg.convert.load","load_state",restore)
+end

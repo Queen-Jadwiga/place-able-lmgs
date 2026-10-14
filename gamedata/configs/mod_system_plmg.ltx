@@ -1,0 +1,38 @@
+; Place-able LMGs test object. Existing native class registration; namespaced vanilla cover-model variant.
+[plmg_mounted_pkm]:stationary_mgun,wpn_pkm_sounds
+class = _S_STMGU
+ammo_mag_size = 100
+ammo_elapsed = 100
+; Explicit profile from the supplied base PKM; native mounted class retained.
+ammo_class = ammo_pkm_100, ammo_pkm_100_bad, ammo_pkm_100_verybad, ammo_7.62x54_ap, ammo_7.62x54_ap_bad, ammo_7.62x54_ap_verybad
+rpm = 650
+hit_power = 0.77, 0.77, 0.77, 0.77
+hit_impulse = 40
+bullet_speed = 825
+fire_distance = 1000
+fire_dispersion_base = 0.34
+use_aim_bullet = false
+time_to_aim = 0.0
+visual = plmg\mounted_pkm.ogf
+net_spawn_after = plmg_mounted.net_spawn_after
+lock_enter = false
+lock_exit = false
+on_before_use = plmg_mounted.before_use
+; Native holder filter: actors/stalkers/mutants cannot push the test shell.
+; This filter excludes characters; model userdata separately excludes map contact.
+ignore_collision = npc
+
+; The addon supplies ammo and sounds; Place-able LMGs supplies the mounted shooting profile.
+; No optional config inheritance: dependencies are checked only before MG42 spawn.
+[plmg_mounted_mg42]:plmg_mounted_pkm
+visual = plmg\mounted_mg42.ogf
+ammo_class = ammo_7.92x33_fmj, ammo_7.92x33_fmj_bad, ammo_7.92x33_fmj_verybad, ammo_7.92x33_ap, ammo_7.92x33_ap_bad, ammo_7.92x33_ap_verybad
+rpm = 1200
+hit_power = 0.9, 0.9, 0.9, 0.9
+hit_impulse = 37
+bullet_speed = 740
+fire_distance = 1000
+fire_dispersion_base = 0.32
+snd_shoot = wpn_mg42_snd_shoot
+snd_empty = weapons\mg42\mg42_trigger
+snd_reload = weapons\mg42\mg42_reload
