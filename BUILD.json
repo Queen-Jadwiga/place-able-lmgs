@@ -14,10 +14,10 @@
   "file_hashes": {
     ".gitignore": "b08c3537826e42c1b27840f048ef60744c74a819dea75c647a2b31e3f29b3154",
     "PRIVATE_MODELS.json": "a7f5426f2ca1236c25a937579a87cf1d07310e4bc088f1c0bfb008c2282e22e7",
-    "README.md": "80718a74a630d2985bca8f1e520a3cbf53f6c2e3bfb639458315186f28481f61",
-    "TESTING.md": "8e83084fac1c4476aca14e40387a0a8081db74d18f6ca743c5c41902543c4462",
+    "README.md": "4e16aa369103f8e47365b3832d61f1b09370a0323a31996034c8d4de153bb301",
+    "TESTING.md": "b6c993e6dc74dcce4942e4734459aaca03d6a5402e40982b1883a3d6e6618292",
     "fomod/ModuleConfig.xml": "5b7bb4ca44530b022dea89795cd5e158a1650fda14f665cecf2e5bb01c3f6e17",
-    "fomod/info.xml": "37d7ac646007a774db773f6bb386aea45bb5f11403ac6e925306da7cd002a2f0",
+    "fomod/info.xml": "5b6134da982bca88afe21d9a283a27146571f52042ac2379660baa1e06ca2f77",
     "gamedata/configs/mod_system_plmg.ltx": "eb119bdaaeed189a4861fbc005338483a556c42665ae8bc69336d9022aac9f7e",
     "gamedata/configs/models/plmg/mounted_mg42.ltx": "c5b95282b9fe5067379fa4f47a2ecca448e28a5595ff84d0229d99c967ae118b",
     "gamedata/configs/models/plmg/mounted_pkm.ltx": "3f9dfa11bc10d8e0747bb8aa6453a6b7f3c3e86431a7456fcadd84f785b34ab5",

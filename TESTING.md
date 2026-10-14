@@ -1,6 +1,6 @@
 # v0.8.0 test
 
-Install independently of CtZ, on a backed-up ordinary GAMMA save. Restart fully. Use a base PKM or MG42 without installed upgrades/accessories. Keep the MG42 weapon addon enabled for MG42; GT disabled.
+Install independently of CtZ, on a backed-up ordinary GAMMA save. Restart fully. Use a base PKM or MG42 without installed upgrades/accessories. For MG42 tests, enable only the MG-42/MG-3 addon from [Hisalute's Weapon Packs Repacked](https://www.moddb.com/mods/stalker-anomaly/addons/hisalutes-weapon-packs-repacked); the other weapon packs are not required. PKM tests need no Hisalute addon. Keep GT disabled.
 
 1. Right-click Mount; confirm automatic inventory closure and optional CMO bottom-row icon. Cancel once and verify gun/ammunition untouched.
 2. Place on level ground, rotate Q/E, confirm Use. Original disappears only after mounted setup. Fire, dismount and check alignment; repeat an accepted elevated placement.
