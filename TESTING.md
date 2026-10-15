@@ -1,4 +1,4 @@
-# 0.8.3 native test plan
+# 0.8.2 native test plan
 
 Use full restart and backed-up standalone saves. This is a candidate, not a verified fix release. Test both PKM and MG42; MG42 requires Hisalute's MG-42/MG-3 addon.
 

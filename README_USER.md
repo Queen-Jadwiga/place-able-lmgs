@@ -1,4 +1,4 @@
-# Placeable LMGs — v0.8.3 beta
+# Placeable LMGs — v0.8.2 beta
 
 Turn a supported inventory LMG into a placeable, usable emplacement, then pack it up again.
 
@@ -39,6 +39,6 @@ Include the weapon, what happened, your executable version and any reproduction 
 
 Mounted assemblies were prepared from the supplied Anomaly/GAMMA PKM and MG42 models with an adapted tripod. MG42 weapon, sound and texture assets are supplied by Hisalute's MG-42/MG-3 addon. Required third-party gun sounds and textures are not bundled here. Placeable Campfires and Context Menu Overhaul informed compatibility research; their scripts are not included.
 
-## v0.8.3 test candidate
+## v0.8.2 changes
 
-Turret tracking increased from the native 10-degree/second defaults to 90 degrees/second horizontally and 60 vertically. Reloads now consume inventory ammunition instead of generating belts. Exit offset is aligned with the operating position, with standing/exit clearance checks. Full restart required; reposition existing guns if the new checks refuse entry. This candidate needs native testing before public promotion.
+Turret tracking increased from the native 10-degree/second defaults to 90 degrees/second horizontally and 60 vertically. Reloads now consume inventory ammunition instead of generating belts. Exit offset is aligned with the operating position, with standing/exit clearance checks. Full restart required; reposition existing guns if the new checks refuse entry. Tested by the author with both PKM and MG42 after disabling the old CtZ mounted-gun implementation.
