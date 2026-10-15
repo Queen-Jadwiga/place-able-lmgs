@@ -1,0 +1,27 @@
+-- Optional consumers use this versioned interface, never transfer records or raw spawn.
+-- All module reads avoid X-Ray's missing-script autoloader.
+local function module(name) return plmg_optional.get(name) end
+function describe()
+    local conversion,preview=module("plmg_conversion"),module("plmg_preview")
+    local legacy=module("ctz_mount_conversion")~=nil
+    return {api_version=1,version="0.8.2",available=not legacy and
+        preview~=nil and type(preview.start)=="function" and type(preview.cancel)=="function" and type(preview.active)=="function" and
+        conversion~=nil and type(conversion.pending)=="function",
+        reason=legacy and "legacy-recovery" or nil,
+        capabilities={inventory_placement=true,cancel_placement=true,scripted_spawn=false,npc_operators=false}}
+end
+function start_placement(item)
+    if not describe().available then return false,"Placeable LMGs is unavailable or legacy recovery is active." end
+    local preview,conversion=module("plmg_preview"),module("plmg_conversion")
+    if conversion.pending() or preview.active() then return false,"Finish the current placement or transfer first." end
+    -- Same eligibility and item-consuming transaction as the native inventory menu.
+    if not preview.start(item) then return false,"This weapon cannot be placed right now." end
+    return true,"Placement started."
+end
+function cancel_placement()
+    if not describe().available then return false,"Placeable LMGs is unavailable or legacy recovery is active." end
+    module("plmg_preview").cancel()
+    return true
+end
+-- Ensure the namespace is discovered through the host startup scan; no callbacks needed.
+function on_game_start() end

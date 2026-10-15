@@ -27,7 +27,7 @@ run('BUILD_ROOT='+json.dumps(str(root)), 'path')
 run('plmg_optional={get=function(name) if name=="ctz_mount_conversion" then return {} end end}; local e=setmetatable({},{__index=_G}); assert(loadfile(BUILD_ROOT.."/gamedata/scripts/plmg_integrations.script","t",e))(); assert(e.register("guard","actor_on_update",function()end)==false)', 'co-install guard')
 print('PASS standalone disables registration when CtZ mounted feature exists')
 run('plmg_optional={get=function() return nil end}', 'optional setup')
-for name in ['native_fixtures.lua','mount_preview_fixtures.lua','mount_conversion_fixtures.lua','mount_pickup_fixtures.lua']:
+for name in ['native_fixtures.lua','mount_preview_fixtures.lua','mount_conversion_fixtures.lua','mount_pickup_fixtures.lua','api_fixtures.lua']:
     run((root/'verification'/name).read_text(),name)
 lua.lua_close(L)
 print(f'PASS standalone: {len(scripts)} scripts compile; all XML parsed')

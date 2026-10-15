@@ -1,4 +1,4 @@
-# v0.8.1 test
+# v0.8.2 test
 
 Install independently of CtZ, on a backed-up ordinary GAMMA save. Restart fully. Use a base PKM or MG42 without installed upgrades/accessories. For MG42 tests, enable only the MG-42/MG-3 addon from [Hisalute's Weapon Packs Repacked](https://www.moddb.com/mods/stalker-anomaly/addons/hisalutes-weapon-packs-repacked); the other weapon packs are not required. PKM tests need no Hisalute addon. Keep GT disabled.
 
@@ -11,4 +11,8 @@ Install independently of CtZ, on a backed-up ordinary GAMMA save. Restart fully.
 
 Old CtZ objects and free debug objects are not standalone pickup inputs. No addon-specific weapon-part state is restored. Missing dependencies or incompatible loaded ammo must preserve the inventory gun. Native timer/tooltip rendering and extracted-module operation are pending verification.
 
-For v0.8.1, confirm the interaction prompt displays Mount and Hold Pickup with your bound Use key, without a raw `st_plmg_*` ID. Check it again after save/load. Send `appdata/logs/plmg.log` for standalone diagnostics.
+For v0.8.2, confirm the interaction prompt displays Mount and Hold Pickup with your bound Use key, without a raw `st_plmg_*` ID. Check it again after save/load. Send `appdata/logs/plmg.log` for standalone diagnostics.
+
+## 0.8.2 experimental interface
+
+Repeat standalone startup, conversion/pickup and save/load. With clean CtZ 0.1.36 enabled, verify provider availability and exactly one inventory Mount action, then repeat placement/pickup. With the old CtZ gun/recovery namespace present, PLMGs must remain paused. Existing CtZ gun saves must be cleaned under the old implementation first. The API does not add NPC operators or script-spawned emplacements. Released 0.8.1 remains on main.
