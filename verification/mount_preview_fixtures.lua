@@ -4,6 +4,7 @@ local function module(name)
  local env=setmetatable({},{__index=_G});assert(loadfile(BUILD_ROOT..'/gamedata/scripts/'..name..'.script','t',env))();return env
 end
 local callbacks,logs={},{}
+plmg_safety={placement_clear=function()return true end}
 plmg_integrations=module('plmg_integrations')
 RegisterScriptCallback=function(e,f) callbacks[e]=f end;axr_main=nil
 plmg_diagnostics={event=function(s) logs[#logs+1]=s end}

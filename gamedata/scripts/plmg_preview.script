@@ -72,7 +72,10 @@ local function placement()
     local nav=point(level.vertex_position(id))
     if math.abs(nav.y-center.y)>0.35 then return rejection("nav_height") end
     if (nav.x-center.x)^2+(nav.z-center.z)^2>1 then return rejection("nav_distance") end
-    return {x=center.x,y=center.y+1.15,z=center.z,lvid=id,gvid=db.actor:game_vertex_id()}
+    local candidate={x=center.x,y=center.y+1.15,z=center.z,lvid=id,gvid=db.actor:game_vertex_id()}
+    local safe=plmg_safety.placement_clear(candidate,session.heading)
+    if not safe then return rejection("operator_clearance") end
+    return candidate
 end
 local function hud_free()
     local menu=plmg_optional.get("actor_menu")
@@ -123,7 +126,7 @@ local function key(dik,bind,disabled,flags)
     if bind==key_bindings.kUSE then
         flags.ret_value=false
         local ok,p=pcall(placement)
-        if not ok or not p then session.valid=false;session.position=nil;tip("Aim at clear, level ground with room for the tripod.");return end
+        if not ok or not p then session.valid=false;session.position=nil;tip("Aim at level ground with clear standing and exit space behind the gun.");return end
         session.position=p
         local obj=level.object_by_id(session.id)
         local converted,message=plmg_conversion.begin(obj,p,session.heading)

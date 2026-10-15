@@ -2,6 +2,8 @@ local clock=0;time_global=function() return clock end
 local passed=0
 local function check(v,label) assert(v,label);passed=passed+1;print('PASS '..label) end
 local records,callbacks={},{}
+local clearance=true
+plmg_safety={placement_clear=function()return clearance end,exit_clear=function()return clearance end}
 plmg_diagnostics={event=function(s) records[#records+1]=s end}
 plmg_integrations={register=function(key,event,fn) callbacks[event]=fn;return true end}
 local objects,created,released={},0,0
@@ -74,6 +76,8 @@ system_ini=function() return {
  r_line=function(_,sec,index) assert(sec:match('snd_shoot$') and (index==0 or index==1));return true,'snd_1_layer'..(index==0 and '' or '1'),'weapons\\test\\shot'..index end,
  r_string=function(_,sec,key)
   if key=='class' then return '_S_STMGU' end
+  if key=='unlimited_ammo' then return 'false' end
+  if key=='reload_consume' then return 'plmg_mounted.reload_consume' end
   if key=='ignore_collision' then return contact_filter end
   if key=='ammo_class' then return sec=='plmg_mounted_mg42' and 'ammo_7.92x33_fmj' or 'ammo_pkm_100' end
   if key=='snd_shoot' then return sec=='plmg_mounted_mg42' and 'wpn_mg42_snd_shoot' or 'wpn_pkm_snd_shoot' end
@@ -115,6 +119,12 @@ check(ok and id==100 and objects[100].remaining==7 and objects[100].ammo_type==1
 check(objects[100].angle.y==1.5 and not objects[100].ai_locations,'orientation and native construction-height policy')
 check(m.net_spawn_after(obj) and m.ready(100),'native model setup')
 check(m.before_use(obj),'configured native use')
+clearance=false;check(not m.before_use(obj),'mount refused when native exit area is blocked');clearance=true
+check(not m.reload_consume(obj,stm,nil),'native spawn/type initialization never consumes without an owner')
+check(m.reload_consume(obj,stm,actor),'occupied reload requests native inventory consumption')
+local flags={ret_value=true};actor.get_attached_vehicle=function()return obj end;key_bindings={kUSE=4};m.on_game_start();clearance=false;callbacks.on_before_key_press(1,4,false,flags)
+check(not flags.ret_value,'blocked dismount does not reach native Use')
+flags={ret_value=true};clearance=true;callbacks.on_before_key_press(1,4,false,flags);check(flags.ret_value,'clear dismount preserves native Use')
 objects[100].remaining=5;m.net_spawn_after(obj)
 check(objects[100].remaining==5,'restoration does not refill')
 print('PASS standalone native lifecycle fixture: '..passed..' assertions')

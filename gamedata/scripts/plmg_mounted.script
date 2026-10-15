@@ -124,6 +124,9 @@ function net_spawn_after(obj)
     if not ok or not message then event("configure_failed");return false end
     return true
 end
+-- Native net_Spawn calls SetAmmoType before an operator exists. Consuming
+-- there would dereference a null GetInventory(); consume only while occupied.
+function reload_consume(obj,stm,owner) return owner~=nil end
 function ready(id) return tracked_id==id and anchor_position~=nil end
 function before_use(obj)
     if plmg_optional.get("ctz_mount_conversion") then return false end
@@ -134,6 +137,11 @@ function before_use(obj)
         local p=obj:position()
         local drift=(p.x-anchor_position.x)^2+(p.y-anchor_position.y)^2+(p.z-anchor_position.z)^2
         if drift>0.04 then event("mount_blocked reason=root_drift");return false end
+        if not plmg_safety.exit_clear(obj) then
+            local news=plmg_optional.get("news_manager")
+            if news and db and db.actor then pcall(news.send_tip,db.actor,"There is not enough clear standing space behind this gun. Pick it up and place it farther from walls or steps.",0,nil,5000) end
+            return false
+        end
         return true
     end)
     if not ok or not allowed then event("mount_blocked reason=operator_not_configured");return false end
@@ -144,8 +152,22 @@ local function observe()
     local ok=pcall(tracked_object)
     if not ok then event("tracking_failed");tracked_id=nil end
 end
+local function exit_input(dik,bind,disabled,flags)
+    if disabled or not key_bindings or bind~=key_bindings.kUSE then return end
+    local ok,obj=pcall(function() return db and db.actor and db.actor:get_attached_vehicle() end)
+    if not ok or not obj then return end
+    local checked,ours=pcall(function() return sections[obj:section()]==true end)
+    if not checked or not ours then return end
+    -- Never force detach/teleport. Leave native Use in charge when clear.
+    if not plmg_safety.exit_clear(obj) then
+        flags.ret_value=false
+        local news=plmg_optional.get("news_manager")
+        if news then pcall(news.send_tip,db.actor,"The exit is obstructed. Clear the area behind the gun before dismounting.",0,nil,5000) end
+    end
+end
 function on_game_start()
     plmg_integrations.register("plmg.mounted.observe","actor_on_update",observe)
+    plmg_integrations.register("plmg.mounted.safe_exit","on_before_key_press",exit_input)
 end
 local function find_owned()
     local sim=alife()
@@ -184,6 +206,10 @@ function spawn(kind,request)
         for _,key in ipairs({"snd_shoot","snd_empty","snd_reload","ammo_class"}) do
             if not ini:line_exist(section,key) then return false,"Mounted parameter missing: "..key end
         end
+        if not ini:line_exist(section,"unlimited_ammo") or ini:r_string(section,"unlimited_ammo")~="false" or
+            not ini:line_exist(section,"reload_consume") or ini:r_string(section,"reload_consume")~="plmg_mounted.reload_consume" then
+            return false,"Mounted ammunition consumption settings were overridden."
+        end
         local fs=getFS()
         if not fs:exist("$game_textures$","plmg\\mount_black.dds") then return false,"Place-able LMGs black mount texture unavailable" end
         local ready,profile_reason=profile_ready(ini,fs,section)
@@ -207,6 +233,7 @@ function spawn(kind,request)
             xyz(place.position)
             if type(heading)~="number" or heading~=heading or math.abs(heading)>math.pi*2+0.001 then return false,"Invalid placement heading" end
         end
+        if not plmg_safety.placement_clear(place.position,heading*180/math.pi) then return false,"There is not enough level standing space behind this gun." end
         local se=alife_create(section,place.position,place.lvid,place.gvid)
         if not se then return false,"Native create returned no object" end
         local angled=pcall(function() se.angle=vector():set(0,heading,0) end)

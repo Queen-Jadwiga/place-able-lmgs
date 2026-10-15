@@ -1,0 +1,53 @@
+-- Conservative static-geometry standing-space tests; no actor teleport/velocity writes.
+local radius,height=0.35,1.8
+local offsets={{0,0},{radius,0},{-radius,0},{0,radius},{0,-radius}}
+local function finite(n) return type(n)=="number" and n==n and math.abs(n)<100000 end
+local function point(p) return p and finite(p.x) and finite(p.y) and finite(p.z) end
+local function ray(p,d,length)
+    local pick=ray_pick()
+    pick:set_position(p);pick:set_direction(d);pick:set_range(length)
+    -- Dynamic queries are unsafe here: native result-material lookup assumes static triangles.
+    pick:set_flags(2)
+    if not pick:query() then return nil end
+    local distance=pick:get_distance()
+    if not finite(distance) or distance<0 or distance>length then error("invalid clearance ray") end
+    return distance,pick:get_normal()
+end
+function clear_feet(feet)
+    local ok,clear=pcall(function()
+        if not point(feet) then return false end
+        for _,offset in ipairs(offsets) do
+            local x,z=feet.x+offset[1],feet.z+offset[2]
+            local distance,normal=ray(vector():set(x,feet.y+0.25,z),vector():set(0,-1,0),0.5)
+            if not distance or not point(normal) or normal.y<0.94 or math.abs(distance-0.25)>0.10 then return false end
+            -- Standing headroom at the center and four body-radius edges.
+            if ray(vector():set(x,feet.y+0.12,z),vector():set(0,1,0),height-0.12) then return false end
+        end
+        -- Cross-body probes at ankle, torso and shoulder height catch walls/doorframes.
+        for _,y in ipairs({0.2,0.9,1.65}) do
+            for _,axis in ipairs({{1,0},{0,1},{0.70710678,0.70710678},{0.70710678,-0.70710678}}) do
+                local dx,dz=axis[1],axis[2]
+                if ray(vector():set(feet.x-dx*radius,feet.y+y,feet.z-dz*radius),vector():set(dx,0,dz),radius*2) then return false end
+            end
+        end
+        return true
+    end)
+    return ok and clear==true
+end
+function placement_clear(root,heading_degrees)
+    if not point(root) or not finite(heading_degrees) then return false end
+    local ok,clear=pcall(function()
+        -- Same yaw convention as native setHPB/server angle.y, not mouse aiming pitch.
+        local forward=vector():setHP(heading_degrees*math.pi/180,0)
+        local feet=vector():set(root.x-forward.x*1.5,root.y-1.15,root.z-forward.z*1.5)
+        return clear_feet(feet)
+    end)
+    return ok and clear==true
+end
+function exit_clear(obj)
+    local ok,clear=pcall(function()
+        local stm=obj and obj:get_stmgun()
+        return stm and clear_feet(stm:ExitPosition())
+    end)
+    return ok and clear==true
+end

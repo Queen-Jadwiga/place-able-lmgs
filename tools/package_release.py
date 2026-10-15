@@ -2,7 +2,7 @@
 from pathlib import Path
 import zipfile,xml.etree.ElementTree as E
 root=Path(__file__).resolve().parents[1]
-output=root.parent/'Placeable_LMGs_0.8.1_End_User.zip'
+output=root.parent/'Placeable_LMGs_0.8.3_Test.zip'
 files=[p for folder in ['gamedata','fomod'] for p in (root/folder).rglob('*') if p.is_file()]
 files += [root/'README_USER.md',root/'meta.ini']
 assert len(list((root/'gamedata/meshes/plmg').glob('*.ogf')))==2, 'Supply the two private mounted models first'
