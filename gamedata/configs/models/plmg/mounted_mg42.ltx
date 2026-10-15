@@ -5,7 +5,10 @@ rotate_y_bone = joint_rotate_y
 fire_bone = joint_fire
 camera_bone = joint_camera
 actor_bone = link
-exit_position = 0, -1.15, -2.0
+; Exit at the same world-space feet position used while operating.
+exit_position = 0, -1.15, -1.5
+rotate_x_speed = 60
+rotate_y_speed = 90
 wpn_section = plmg_mounted_mg42
 
 ; Applied natively during CreateSkeleton, before restored sync states and Lua.

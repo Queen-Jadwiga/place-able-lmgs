@@ -3,10 +3,7 @@
   <moduleName>Placeable LMGs</moduleName>
   <requiredInstallFiles>
     <folder source="gamedata" destination="gamedata"/>
-    <file source="README.md" destination="README.md"/>
-    <file source="TESTING.md" destination="TESTING.md"/>
+    <file source="README_USER.md" destination="README_USER.md"/>
     <file source="meta.ini" destination="meta.ini"/>
-    <file source="PRIVATE_MODELS.json" destination="PRIVATE_MODELS.json"/>
-    <file source="BUILD.json" destination="BUILD.json"/>
   </requiredInstallFiles>
 </config>

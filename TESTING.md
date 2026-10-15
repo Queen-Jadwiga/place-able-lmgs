@@ -1,18 +1,11 @@
-# v0.8.2 test
+# 0.8.2 native test plan
 
-Install independently of CtZ, on a backed-up ordinary GAMMA save. Restart fully. Use a base PKM or MG42 without installed upgrades/accessories. For MG42 tests, enable only the MG-42/MG-3 addon from [Hisalute's Weapon Packs Repacked](https://www.moddb.com/mods/stalker-anomaly/addons/hisalutes-weapon-packs-repacked); the other weapon packs are not required. PKM tests need no Hisalute addon. Keep GT disabled.
+Use full restart and backed-up standalone saves. This is a candidate, not a verified fix release. Test both PKM and MG42; MG42 requires Hisalute's MG-42/MG-3 addon.
 
-1. Right-click Mount; confirm automatic inventory closure and optional CMO bottom-row icon. Cancel once and verify gun/ammunition untouched.
-2. Place on level ground, rotate Q/E, confirm Use. Original disappears only after mounted setup. Fire, dismount and check alignment; repeat an accepted elevated placement.
-3. Look at the unoccupied converted gun within 2.5 m. Confirm the native two-line Mount / Hold Pickup prompt and bound key. Tap Use mounts on release; mounted Use exits normally. Hold Use for 2.5 seconds returns the base gun, its recorded condition and the spent ammo count.
-4. Look away or move away during a hold: no pickup. Save/load resets incomplete holds. Pickup frees the one slot; remount and repeat with both guns.
-5. Save after firing and after pickup, reload, and verify exactly one gun with no ammo refill. If possible save/load during transfer and check it resumes without duplication. Check no extra ammo boxes are generated.
-6. Send plmg.log plus the main game log for failures: missing menu/tooltip, wrong timing, lost/duplicated item, condition/ammo mismatch, sagging or exit failure.
-
-Old CtZ objects and free debug objects are not standalone pickup inputs. No addon-specific weapon-part state is restored. Missing dependencies or incompatible loaded ammo must preserve the inventory gun. Native timer/tooltip rendering and extracted-module operation are pending verification.
-
-For v0.8.2, confirm the interaction prompt displays Mount and Hold Pickup with your bound Use key, without a raw `st_plmg_*` ID. Check it again after save/load. Send `appdata/logs/plmg.log` for standalone diagnostics.
-
-## 0.8.2 experimental interface
-
-Repeat standalone startup, conversion/pickup and save/load. With clean CtZ 0.1.36 enabled, verify provider availability and exactly one inventory Mount action, then repeat placement/pickup. With the old CtZ gun/recovery namespace present, PLMGs must remain paused. Existing CtZ gun saves must be cleaned under the old implementation first. The API does not add NPC operators or script-spawned emplacements. Released 0.8.1 remains on main.
+1. On open level ground, check preview, rotation and confirmation. Sweep aim left/right/up/down; compare the new 90-degree horizontal / 60-degree vertical per-second speeds against the old native defaults of 10.
+2. Remove ALL compatible ammunition from inventory, including other quality variants. Mount an empty gun, press Reload repeatedly, dismount and pick up: magazine must remain empty and no ammunition may appear. Repeat with a partially loaded gun; reload must not increase count without inventory ammo.
+3. Carry a known small amount (e.g. 17 rounds) of one compatible type; reload from empty. Compare total ammunition in inventory plus gun before/after. Only supplied rounds may be loaded. Test a full belt and residual boxes; test original ammo and another supported type, then pack up. Total rounds must be conserved.
+4. Save/load with empty, partial and full magazines. Counts must not refill on loading, mounting or dismounting. Repeat pickup and remount conversion.
+5. Place next to a wall, doorway, low ceiling, step and ledge. Clear operator space behind the gun is required; rotation changes that checked space. Unsafe placements should not show a valid preview or consume inventory. Existing unsafe guns can still be packed up and repositioned.
+6. Test repeated native exits in open areas, at elevation and near the previously problematic doorway. Exit should remain at the operator's feet rather than half a metre behind. If static geometry obstructs the exit before Use, it should be refused with a message. Do not force a blocked exit. Moving-object collisions and unusual map geometry still require investigation.
+7. Report any underground movement, launch, stuck operator, rejected reasonable placement, free ammunition or loss/duplication. Include plmg.log if generated and the X-Ray log. The quiet end-user package does not produce routine physics dumps.

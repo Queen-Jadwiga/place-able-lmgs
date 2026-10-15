@@ -18,3 +18,12 @@ for name,sha in json.loads((root/'PRIVATE_MODELS.json').read_text())['model_sha2
  p=root/name
  if p.exists():assert hashlib.sha256(p.read_bytes()).hexdigest()==sha
 print('PASS standalone profiles, prompt, userdata routes and DDS assets; private model hashes when present')
+
+# Regression contracts for reported free reload/slow slew/backward exit bugs.
+assert 'unlimited_ammo = false' in ini
+assert 'reload_consume = plmg_mounted.reload_consume' in ini
+for kind in ['pkm','mg42']:
+    body=(root/f'gamedata/configs/models/plmg/mounted_{kind}.ltx').read_text()
+    assert 'rotate_x_speed = 60' in body and 'rotate_y_speed = 90' in body
+    assert 'exit_position = 0, -1.15, -1.5' in body
+print('PASS consuming reload, explicit native aiming speeds and aligned exit profiles')
