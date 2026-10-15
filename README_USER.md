@@ -1,4 +1,4 @@
-# Placeable LMGs — v0.8.3 test candidate
+# Placeable LMGs — v0.8.3
 
 Turn a supported inventory LMG into a placeable, usable emplacement, then pack it up again.
 
@@ -39,6 +39,6 @@ Include the weapon, what happened, your executable version and any reproduction 
 
 Mounted assemblies were prepared from the supplied Anomaly/GAMMA PKM and MG42 models with an adapted tripod. MG42 weapon, sound and texture assets are supplied by Hisalute's MG-42/MG-3 addon. Required third-party gun sounds and textures are not bundled here. Placeable Campfires and Context Menu Overhaul informed compatibility research; their scripts are not included.
 
-## v0.8.3 test changes
+## v0.8.3 changes
 
-Place several guns, including several of the same model. Aim at the particular gun you want to pick up; its original weapon, condition and current ammo are handled independently. A new placement or pickup waits for the previous inventory transfer to complete. The faster aiming, consuming reloads, quiet logs and conservative exit checks from 0.8.2 are retained. This multiple-emplacement candidate needs in-game testing before release.
+Place several guns, including several of the same model. Aim at the particular gun you want to pick up; its original weapon, condition and current ammo are handled independently. A new placement or pickup waits for the previous inventory transfer to complete. The faster aiming, consuming reloads, quiet logs and conservative exit checks from 0.8.2 are retained. Multiple-emplacement gameplay has been tested and accepted for this beta release.
