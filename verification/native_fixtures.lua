@@ -45,7 +45,7 @@ shell.get_joint_by_bone_name=function(_,name)
 end
 local obj_section='plmg_mounted_pkm'
 local teleports=0
-local obj={get_physics_shell=function() return shell end,force_set_position=function() teleports=teleports+1;error('post-construction teleport forbidden') end,position=function() return live_position end,id=function() return 100 end,section=function() return obj_section end,get_stmgun=function() return stm end}
+local obj={get_physics_shell=function() return shell end,force_set_position=function() teleports=teleports+1;error('post-construction teleport forbidden') end,position=function() return live_position end,id=function() return 100 end,name=function()return "plmg_native100"end,section=function() return obj_section end,get_stmgun=function() return stm end}
 local invalid_vertex,uneven=false,false
 level={name=function() return 'l07_military' end,object_by_id=function() return obj end,vertex_id=function() return invalid_vertex and 4294967295 or 123 end,vertex_position=function() return {x=pos.x,y=pos.y+(uneven and 1 or 0),z=pos.z+1.5} end}
 local sim={object=function(_,id) return objects[id] end}
@@ -96,7 +96,7 @@ alife_create=function(sec,p,l,g)
  assert((sec=='plmg_mounted_pkm' or sec=='plmg_mounted_mg42') and l==123 and g==2103 and p.x==pos.x and p.z==pos.z+1.5 and math.abs(p.y-pos.y-1.15)<0.0001)
  created=created+1
  live_position={x=p.x,y=p.y,z=p.z}
- local se={id=100,online=false,position=p,remaining=0,ammo_type=0,section_name=function() return sec end,use_ai_locations=function(self,value) assert(not self.online);self.ai_locations=value end,
+ local se={id=100,name=function()return 'plmg_native100'end,online=false,position=p,remaining=0,ammo_type=0,section_name=function() return sec end,use_ai_locations=function(self,value) assert(not self.online);self.ai_locations=value end,
  get_ammo_magsize=function() return magazine_size end,get_ammo_elapsed=function(self) return self.remaining end,get_ammo_type=function(self) return self.ammo_type end,
  set_ammo_elapsed=function(self,value) assert(not self.online);ammo_writes=ammo_writes+1;self.remaining=value end,set_ammo_type=function(self,value) assert(not self.online);self.ammo_type=value end}
  objects[100]=se;return se
@@ -128,3 +128,16 @@ flags={ret_value=true};clearance=true;callbacks.on_before_key_press(1,4,false,fl
 objects[100].remaining=5;m.net_spawn_after(obj)
 check(objects[100].remaining==5,'restoration does not refill')
 print('PASS standalone native lifecycle fixture: '..passed..' assertions')
+-- Each online native object must keep independent readiness/anchor identity.
+local old_lookup=level.object_by_id
+local second_name='plmg_native101'
+local second=setmetatable({id=function()return 101 end,name=function()return second_name end},{__index=obj})
+objects[101]={position=objects[100].position,section_name=obj.section,name=second.name}
+level.object_by_id=function(id)if id==101 then return second end;return old_lookup(id)end
+check(m.net_spawn_after(second) and m.ready(100) and m.ready(101),'second client setup preserves first gun readiness')
+check(m.before_use(obj) and m.before_use(second),'both tracked guns remain mountable')
+missing_root=true;check(not m.net_spawn_after(second) and m.ready(100),'failed setup only invalidates its own gun');missing_root=false
+m.net_spawn_after(second);second_name='reused101'
+check(not m.ready(101) and m.ready(100),'client ID/name reuse cannot inherit another gun readiness')
+callbacks.actor_on_update();check(m.ready(100),'pruning stale client tracking preserves other guns')
+print('PASS multi-native readiness: 5 assertions')

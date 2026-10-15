@@ -16,7 +16,7 @@ local stm={GetOwner=function()return owner end,GetAmmoElapsed=function()return 3
 local prompt
 local target={set_tip_text=function(_,v)prompt=v end,id=function()return 100 end,name=function()return 'plmg_mounted_pkm100' end,section=function()return 'plmg_mounted_pkm' end,position=function()return vector():set(0,1.15,1.5)end,get_stmgun=function()return stm end}
 local target_se={id=100,position=vector():set(0,1.15,1.5),section_name=target.section,name=target.name}
-level={present=function()return true end,name=function()return 'test' end,object_by_id=function(id)return clients[id]end}
+level={present=function()return true end,name=function()return 'test' end,object_by_id=function(id)return clients[id]end,get_target_obj=function()return clients[100]end}
 alife=function()return {object=function(_,id)return objects[id]end}end
 plmg_mounted={ready=function(id)return ready and id==100 end}
 plmg_preview={eligible=function()return true end,active=function()return false end}

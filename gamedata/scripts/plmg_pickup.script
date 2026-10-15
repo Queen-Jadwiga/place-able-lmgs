@@ -36,7 +36,7 @@ local function held(dik,bind,disabled,flags)
     hold.last=time_global()
     if hold.last-hold.start>=duration then
         hold=nil
-        local success,message=plmg_conversion.pickup()
+        local success,message=plmg_conversion.pickup(obj:id(),obj:name())
         event("finished success="..tostring(success));tip(message)
     end
 end
@@ -48,7 +48,7 @@ local function release(dik,bind,disabled,flags)
     local ok,obj=pcall(eligible)
     if disabled or not ok or not obj or obj:id()~=prior.id or obj:name()~=prior.name then event("tap_cancelled");return end
     if time_global()-prior.start>=duration then
-        local success,message=plmg_conversion.pickup();event("finished success="..tostring(success));tip(message)
+        local success,message=plmg_conversion.pickup(obj:id(),obj:name());event("finished success="..tostring(success));tip(message)
     else
         -- Native non-forced holder path retains entry locks and before_use.
         local attached,err=pcall(function() db.actor:attach_vehicle(obj,false) end)
