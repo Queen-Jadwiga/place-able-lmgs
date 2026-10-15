@@ -52,7 +52,7 @@ f={ret_value=true};callbacks.on_before_key_hold(0,6,false,f);check(not f.ret_val
 f={ret_value=true};callbacks.on_before_key_press(3,0,true,f);check(f.ret_value and plmg_preview.active(),'disabled input preserved')
 hit=false;callbacks.on_before_key_press(0,4,false,{ret_value=true});check(plmg_preview.active(),'confirmation rechecks current surface');hit=true
 callbacks.on_before_key_press(0,4,false,{ret_value=true});check(not plmg_preview.active() and not visual and owned,'check does not consume gun')
-local found=false;for _,s in ipairs(logs)do if s:find('validated section=wpn_pkm',1,true)then found=true end end;check(found,'placement logged')
+local found=false;for _,s in ipairs(logs)do if s:find('validated section=wpn_pkm',1,true)then found=true end end;check(not found,'release preview omits placement debug output')
 plmg_preview.start(obj);hit=false;clock=300;callbacks.actor_on_update();check(not visual,'miss hides preview');callbacks.on_before_key_press(0,4,false,{ret_value=true});check(plmg_preview.active(),'invalid cannot confirm');callbacks.load_state();check(not plmg_preview.active(),'load clears')
 hit=true;plmg_preview.start(obj);map='other';clock=400;callbacks.actor_on_update();check(not plmg_preview.active(),'map change cancels');map='test'
 plmg_preview.start(obj);alive=false;callbacks.actor_on_update();check(not plmg_preview.active(),'death cancels');alive=true

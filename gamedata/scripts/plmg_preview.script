@@ -23,7 +23,6 @@ end
 local function clear(reason)
     session=nil
     if level and level.present() then pcall(function() level.remove_attachment(name) end) end
-    event("closed reason="..reason.." item_consumed=false")
 end
 function start(obj)
     if session or not eligible(obj) then return false end
@@ -31,7 +30,6 @@ function start(obj)
     if not getFS():exist("$game_meshes$",model) or not getFS():exist("$game_textures$","plmg\\placement_preview.dds") then return false end
     session={id=obj:id(),section=obj:section(),map=level.name(),heading=0,valid=false,last_tick=0}
     tip("Aim at nearby level ground. Q/E rotate; Use places the gun; Escape cancels. Use confirms placement; Escape keeps your inventory gun.")
-    event("started item="..session.id.." section="..session.section)
     return true
 end
 local function point(v)
@@ -92,7 +90,6 @@ local function tick()
         session.last_tick=now
         local candidate,reason=placement()
         local state=candidate and "valid" or reason
-        if session.last_state~=state then event("surface state="..tostring(state).." query_target=2");session.last_state=state end
         local preview=level.get_attachment(name)
         if not candidate then
             session.valid=false;session.position=nil
@@ -103,7 +100,6 @@ local function tick()
             preview=level.add_attachment(name,choices[session.section])
             if not preview then error("native attachment unavailable") end
             preview:set_type(script_attachment_type.World)
-            event("visual_created model="..choices[session.section])
             -- Solid cyan silhouette; only this private render instance changes.
             preview:set_shader(0,"models\\model","plmg\\placement_preview")
         end
@@ -129,7 +125,6 @@ local function key(dik,bind,disabled,flags)
         local ok,p=pcall(placement)
         if not ok or not p then session.valid=false;session.position=nil;tip("Aim at clear, level ground with room for the tripod.");return end
         session.position=p
-        event(string.format("validated section=%s root=%.6f,%.6f,%.6f yaw_degrees=%.3f lvid=%d gvid=%d item_consumed=false",session.section,p.x,p.y,p.z,session.heading,p.lvid,p.gvid))
         local obj=level.object_by_id(session.id)
         local converted,message=plmg_conversion.begin(obj,p,session.heading)
         if converted then clear("conversion_started") end
