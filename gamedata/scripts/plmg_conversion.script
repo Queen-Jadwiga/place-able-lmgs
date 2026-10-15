@@ -1,5 +1,6 @@
--- One saved transfer record; source is removed only after native setup succeeds.
+-- Many deployed records, one serialized inventory transaction. Never share ammo/condition between guns.
 local record,invalid,started,last_state
+local deployed={}
 local key="plmg_transfer"
 local supported={wpn_pkm="pkm",wpn_pkm_siber="pkm",wpn_mg42="mg42"}
 local target={pkm="plmg_mounted_pkm",mg42="plmg_mounted_mg42"}
@@ -34,11 +35,12 @@ local function server(id,section,name)
     if se:section_name()~=section or se:name()~=name then return nil,"identity_changed" end
     return se,"matched"
 end
-local function mounted()
-    local se,status=server(record.target_id,record.target_section,record.target_name)
+local function mounted(r)
+    r=r or record
+    local se,status=server(r.target_id,r.target_section,r.target_name)
     if se then
         local p=se.position
-        if not p or (p.x-record.x)^2+(p.y-record.y)^2+(p.z-record.z)^2>0.04 then return nil,"position_changed" end
+        if not p or (p.x-r.x)^2+(p.y-r.y)^2+(p.z-r.z)^2>0.04 then return nil,"position_changed" end
     end
     return se,status
 end
@@ -64,7 +66,14 @@ local function snapshot(obj)
     end
     return {rounds=rounds,ammo_type=mapped,source_ammo_type=ammo_type,condition=condition,kind=kind}
 end
-function pending() return invalid or (record and record.stage~="active") or false end
+function placement_clear(p)
+    if not p or not number(p.x,-100000,100000) or not number(p.y,-100000,100000) or not number(p.z,-100000,100000) then return false end
+    for _,r in pairs(deployed) do
+        if r.map==level.name() and (p.x-r.x)^2+(p.y-r.y)^2+(p.z-r.z)^2<2.25 then return false end
+    end
+    return true
+end
+function pending() return invalid or record~=nil end
 function blocks(id) return invalid or (record and record.target_id==id and record.stage~="active") or false end
 local function rollback(reason)
     record.stage="rollback";event("rollback reason="..reason.." source_consumed=false")
@@ -75,10 +84,14 @@ function returning()
 end
 function pickup_target()
     local ok,obj=pcall(function()
-        if invalid or not record or record.stage~="active" or not db or not db.actor or not db.actor:alive() or level.name()~=record.map or db.actor:get_attached_vehicle() then return nil end
-        local se=mounted()
-        local obj=se and level.object_by_id(record.target_id)
-        if not obj or not plmg_mounted.ready(record.target_id) or obj:get_stmgun():GetOwner() then return nil end
+        if invalid or record or not db or not db.actor or not db.actor:alive() or db.actor:get_attached_vehicle() then return nil end
+        local look=level.get_target_obj()
+        local selected=look and deployed[look:id()]
+        if not selected or selected.stage~="active" or level.name()~=selected.map or db.actor:id()~=selected.actor_id then return nil end
+        if look:name()~=selected.target_name or look:section()~=selected.target_section then return nil end
+        local se=mounted(selected)
+        local obj=se and level.object_by_id(selected.target_id)
+        if not obj or not plmg_mounted.ready(selected.target_id) or obj:get_stmgun():GetOwner() then return nil end
         local p,a=obj:position(),db.actor:position()
         if (p.x-a.x)^2+(p.y-a.y)^2+(p.z-a.z)^2>6.25 then return nil end
         return obj
@@ -140,9 +153,12 @@ local function return_tick(se,status)
     event("return_configured id="..record.return_id.." rounds="..record.return_rounds.." type="..record.return_ammo_type.." once=true")
     safe_release_manager.release(se)
 end
-function pickup()
+function pickup(expected_id,expected_name)
     local obj=pickup_target()
+    if obj and expected_id and (obj:id()~=expected_id or obj:name()~=expected_name) then return false,"The selected gun changed; try again." end
     if not obj then return false,"Dismount and stand close to the gun before packing it up." end
+    local selected=deployed[obj:id()]
+    record=copy(selected)
     local created_id
     local ok,result,message=pcall(function()
         local stm=obj:get_stmgun()
@@ -182,8 +198,10 @@ function pickup()
                 if not cleaned then invalid=true end
             end
         end
+        if record.stage=="active" then record=nil else deployed[obj:id()]=nil end
         event("pickup_failed reason="..tostring(result));return false,"Packing up failed. The mounted gun is still in place."
     end
+    if record.stage=="active" then record=nil else deployed[obj:id()]=nil end
     return result,message
 end
 local function tick_body()
@@ -238,17 +256,30 @@ local function tick()
         event("transfer_error reason="..tostring(err))
         if record and record.stage=="preparing" then rollback("native_exception") elseif record and record.stage=="returning" then record.stage="return_rollback" else invalid=true end
     end
-    local state=invalid and "suspended" or record and record.stage or "idle"
+    if not invalid and record and record.stage=="active" then
+        deployed[record.target_id]=record;record=nil;started=nil
+    end
+    -- Server objects remain present while offline/on other maps. Prune only
+    -- confirmed absence; identity reuse never authorizes removal or a refund.
+    if not invalid then
+        for id,r in pairs(deployed) do
+            local checked,se,status=pcall(server,id,r.target_section,r.target_name)
+            if checked and status=="absent" then deployed[id]=nil
+            elseif not checked or not se then invalid=true;event("registry_suspended reason=target_identity_changed");break end
+        end
+    end
+    local state=invalid and "suspended" or record and record.stage or next(deployed) and "deployed" or "idle"
     if state~=last_state then event("state="..state);last_state=state end
 end
 function begin(obj,p,heading)
-    if invalid or record then return false,"An emplacement or transfer already exists. Remove it before mounting another gun." end
+    if invalid or record then return false,"Wait for the current inventory transfer to finish before placing another gun." end
     local created_id,created_section
     local ok,success,message=pcall(function()
         if type(alife_release)~="function" then return false,"Native inventory removal is unavailable." end
         local data,reason=snapshot(obj)
         if not data then return false,reason end
         for _,k in ipairs({"x","y","z"}) do if not number(p[k],-100000,100000) then return false,"Placement is unavailable." end end
+        if not placement_clear(p) then return false,"Leave at least 1.5 metres between emplacements." end
         if not number(p.lvid,0,4294967294,true) or not number(p.gvid,0,65534,true) or not number(heading,0,359.99999) then return false,"Placement is unavailable." end
         local source=alife():object(obj:id())
         if not source or source:section_name()~=obj:section() or source:name()~=obj:name() then return false,"Source identity is unavailable." end
@@ -274,16 +305,47 @@ function begin(obj,p,heading)
     return success,message
 end
 local function save(data)
-    data[key]={version=1,record=copy(record),invalid=invalid==true}
+    local list={}
+    for _,r in pairs(deployed) do list[#list+1]=copy(r) end
+    table.sort(list,function(a,b)return a.target_id<b.target_id end)
+    if #list==0 and not record and not invalid then
+        -- A cleaned save can safely return to the previous single-gun release.
+        data[key]={version=1,invalid=false}
+    else
+        data[key]={version=2,records=list,record=copy(record),invalid=invalid==true}
+    end
 end
 local function restore(data)
-    record=nil;invalid=false;started=nil;last_state=nil
+    record=nil;deployed={};invalid=false;started=nil;last_state=nil
     local saved=data and data[key]
     if saved==nil then return end
-    if type(saved)~="table" or saved.version~=1 or type(saved.invalid)~="boolean" or (saved.record~=nil and not valid(saved.record)) then invalid=true;event("load_suspended reason=invalid_record");return end
-    invalid=saved.invalid;record=copy(saved.record)
+    local function reject() invalid=true;event("load_suspended reason=invalid_record") end
+    if type(saved)~="table" or (saved.version~=1 and saved.version~=2) or type(saved.invalid)~="boolean" or (saved.record~=nil and not valid(saved.record)) then reject();return end
+    local list={}
+    if saved.version==2 then
+        if type(saved.records)~="table" then reject();return end
+        local count=0
+        for i,r in pairs(saved.records) do
+            if not number(i,1,65534,true) or not valid(r) or r.stage~="active" then reject();return end
+            count=count+1
+        end
+        local names={}
+        for i=1,count do
+            local r=saved.records[i]
+            if not r or list[r.target_id] or names[r.target_name] then reject();return end
+            list[r.target_id]=copy(r);names[r.target_name]=true
+        end
+    end
+    local pending=saved.record and copy(saved.record)
+    if pending then
+        if list[pending.target_id] then reject();return end
+        for _,r in pairs(list) do if r.target_name==pending.target_name then reject();return end end
+        -- Import legacy active saves into the registry; never recreate objects.
+        if pending.stage=="active" then list[pending.target_id]=pending;pending=nil end
+    end
+    invalid=saved.invalid;deployed=list;record=pending
     if record and (record.stage=="preparing" or record.stage=="returning") then started=time_global() end
-    event("restored stage="..(record and record.stage or "idle"))
+    event("restored transaction="..(record and record.stage or "idle"))
 end
 function on_game_start()
     plmg_integrations.register("plmg.convert.update","actor_on_update",tick)

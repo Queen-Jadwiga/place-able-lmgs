@@ -34,7 +34,7 @@ ray_pick=function()
  return p
 end
 DIK_keys={DIK_Q=1,DIK_E=2,DIK_ESCAPE=3};key_bindings={kUSE=4,kWPN_FIRE=5,kWPN_ZOOM=6}
-plmg_conversion={pending=function()return false end,begin=function()return true,"Conversion test accepted" end}
+plmg_conversion={placement_clear=function()return true end,pending=function()return false end,begin=function()return true,"Conversion test accepted" end}
 plmg_preview=module('plmg_preview');plmg_preview.on_game_start()
 check(creates==0,'load creates nothing')
 check(plmg_preview.eligible(obj),'base supported gun eligible')

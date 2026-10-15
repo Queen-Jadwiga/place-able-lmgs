@@ -47,7 +47,7 @@ local saved={};callbacks.save_state(saved);check(saved.plmg_transfer.record.stag
 ready=true;callbacks.actor_on_update();check(not objects[10] and c.pending() and c.blocks(100),'release once then await absence')
 callbacks.actor_on_update();check(not c.pending() and not c.blocks(100),'commit only after source absence')
 local before=releases;callbacks.actor_on_update();check(releases==before,'no repeat consumption')
-saved={};callbacks.save_state(saved);check(saved.plmg_transfer.record.stage=='active','active transfer saved')
+saved={};callbacks.save_state(saved);check(saved.plmg_transfer.record==nil and saved.plmg_transfer.records[1].stage=='active','active transfer saved')
 c=module('plmg_conversion');c.on_game_start();callbacks.load_state(saved);callbacks.actor_on_update();check(not c.pending() and releases==before and request.rounds==7,'restore active never refills or removes again')
 objects[100]=nil;callbacks.actor_on_update();objects[10]=source;available=true;check(c.begin(obj,place,0),'observed removed emplacement allows next conversion')
 reset();source_ammo='unsupported';check(not c.begin(obj,place,0) and objects[10] and not objects[100],'incompatible loaded ammo retains gun')
@@ -62,7 +62,7 @@ reset();c.begin(obj,place,0);map='other';callbacks.actor_on_update();callbacks.a
 reset();c.begin(obj,place,0);saved={};callbacks.save_state(saved);c=module('plmg_conversion');c.on_game_start();callbacks.load_state(saved);ready=true;callbacks.actor_on_update();callbacks.actor_on_update();check(not objects[10] and not c.pending(),'restore preparing resumes validated transfer')
 reset();c.begin(obj,place,0);ready=true;local goodrelease=alife_release;alife_release=function()error('release failed')end;callbacks.actor_on_update();callbacks.actor_on_update();check(objects[10] and not objects[100],'release exception retaining source cleans target');alife_release=goodrelease
 reset();c.begin(obj,place,0);objects[100].name=function()return 'different' end;callbacks.actor_on_update();callbacks.actor_on_update();check(objects[100] and objects[10] and c.pending(),'target identity reuse suspends without deleting unrelated object')
-reset();callbacks.load_state({plmg_transfer={version=2,invalid=false}});check(c.pending() and c.blocks(100) and not c.begin(obj,place,0),'unknown save version fails closed')
+reset();callbacks.load_state({plmg_transfer={version=99,invalid=false}});check(c.pending() and c.blocks(100) and not c.begin(obj,place,0),'unknown save version fails closed')
 reset();c.begin(obj,place,0);saved={};callbacks.save_state(saved);saved.plmg_transfer.record.extra=function()end;callbacks.load_state(saved);check(c.pending() and objects[10],'invalid extra saved value fails closed without item mutation')
 reset();c.begin(obj,place,0);ready=true;alife_release=function()return false end;callbacks.actor_on_update();callbacks.actor_on_update();check(objects[10] and not objects[100],'explicit release rejection rolls back');alife_release=goodrelease
 print('PASS mount conversion fixtures: '..passed..' assertions')
